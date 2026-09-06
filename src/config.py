@@ -50,4 +50,7 @@ CATEGORICAL_LEVELS = {
 
 # Fecha de corte del split temporal: entrenar con el pasado, validar con el futuro.
 # La deriva de 14,75% (2017) a 36,71% (2018) hace que el split aleatorio mienta.
+# El umbral se elige en esta ventana de validacion, NUNCA en el test: es una
+# decision que depende de la distribucion.
+VAL_DATE = "2018-07-01"
 SPLIT_DATE = "2018-09-01"
