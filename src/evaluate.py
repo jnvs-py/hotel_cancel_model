@@ -35,4 +35,4 @@ def choose_threshold(y_true, proba):
     """
     candidatos = np.linspace(0.05, 0.95, 91)
     scores = [f1_score(y_true, (proba >= t).astype(int), zero_division=0) for t in candidatos]
-    return float(candidatos[int(np.argmax(scores))])
+    return round(float(candidatos[int(np.argmax(scores))]), 4)
