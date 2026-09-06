@@ -1,0 +1,39 @@
+# Plantilla u_docker_ml. Copiar a la raiz del proyecto como .dockerignore
+# Sin este archivo, COPY . . se lleva tu .venv y la imagen pesa gigas.
+
+# Entornos y caches
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Control de versiones y CI
+.git/
+.github/
+.gitignore
+
+# Datos y notebooks: el contenedor sirve predicciones, no entrena
+data/
+notebooks/
+*.ipynb
+.ipynb_checkpoints/
+
+# Tests y documentacion
+tests/
+docs/
+README.md
+CHANGELOG.md
+
+# Editores y secretos
+.vscode/
+.idea/
+.DS_Store
+.env
+*.env
