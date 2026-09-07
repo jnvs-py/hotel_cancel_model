@@ -25,11 +25,27 @@
 | `umbral: 0.6699999999999999` en la respuesta de la API | Coma flotante de `np.linspace` propagada a la metadata | `round(..., 4)` en `choose_threshold` |
 | Ruff: `PD901` no existe | La regla fue removida de ruff | Se quito de la lista de `ignore` en `pyproject.toml` |
 
+### Docker
+
+Se instalo Docker Engine nativo en WSL2 (`docker.io`, sin Docker Desktop) y se
+verifico el contenedor:
+
+- Imagen construida con `docker build --platform linux/amd64`: **701 MB**. Por
+  encima del objetivo generico de <400 MB de la skill `u_docker_ml`, pero
+  explicado por el stack: el `.venv` con pandas + scikit-learn + scipy + numpy
+  pesa 398 MB por si solo, y la base `python:3.12-slim` aporta otros ~150 MB
+  comprimidos. No hay grasa que recortar sin cambiar de libreria de modelado.
+- Contenedor probado en un puerto no default (`PORT=9123`) para confirmar que
+  no esta hardcodeado a 8000: `/health`, `/ready` y `/model-info` responden
+  correctamente y `/predict` devuelve exactamente la misma prediccion que en
+  local (`Not_Canceled`, probabilidad 0,0923, umbral 0,67).
+- El proceso corre como `appuser` (uid 1000), no como root.
+
 ### Pendiente
 
-- `docker build` y `docker run` no se ejecutaron: Docker Desktop no tiene
-  activada la integracion con WSL 2 en esta maquina.
-- Despliegue en la nube: requiere autenticacion interactiva del proveedor.
+- Despliegue en la nube: requiere autenticacion interactiva del proveedor. Los
+  apendices por proveedor (Cloud Run, Azure Container Apps, AWS App Runner)
+  estan listos en `~/.claude/agents/refs/u_cientifico_datos/`.
 
 ---
 
