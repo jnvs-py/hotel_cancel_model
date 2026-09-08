@@ -66,11 +66,13 @@ def build_pipeline():
 def save_model(pipeline, metrics, data_path, model_dir, threshold, n_train, fingerprint=None):
     """Guarda el artefacto y su metadata. Nunca pickle.dump directo.
 
-    La version viene del entorno (CI la deriva del sha de git); el fingerprint
-    identifica TODO lo que afecta al entrenamiento: codigo, datos y lock.
+    La version y el fingerprint vienen del entorno (CI los deriva del repo);
+    local quedan en fallback. El fingerprint identifica TODO lo que afecta al
+    entrenamiento: codigo, datos y lock.
     """
     model_dir.mkdir(parents=True, exist_ok=True)
     joblib.dump(pipeline, model_dir / ARTIFACT_NAME)
+    huella = fingerprint or os.environ.get("FINGERPRINT")
     metadata = {
         "model_version": model_version(),
         "sklearn_version": sklearn.__version__,
@@ -82,8 +84,8 @@ def save_model(pipeline, metrics, data_path, model_dir, threshold, n_train, fing
         "threshold": float(threshold),
         "metrics": metrics,
     }
-    if fingerprint:
-        metadata["fingerprint"] = fingerprint
+    if huella:
+        metadata["fingerprint"] = huella
     (model_dir / METADATA_NAME).write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     return metadata
 

@@ -62,22 +62,15 @@ def _csv_minimo(tmp_path):
 
 
 def test_version_inyectada_por_ci(monkeypatch, tmp_path, datos_sinteticos):
-    """CI deriva la version de git y la pasa por entorno; save_model la hereda."""
+    """CI deriva version y fingerprint de git y los pasa por entorno."""
     monkeypatch.setenv("MODEL_VERSION", "0.2.0+a1b2c3d")
+    monkeypatch.setenv("FINGERPRINT", "fp-de-ci")
     X = datos_sinteticos[FEATURE_ORDER]
     y = (datos_sinteticos[TARGET] == "Canceled").astype(int)
     pipeline = build_pipeline().fit(X, y)
-    metadata = save_model(
-        pipeline,
-        {},
-        _csv_minimo(tmp_path),
-        tmp_path,
-        0.5,
-        len(X),
-        fingerprint="fp-de-prueba",
-    )
+    metadata = save_model(pipeline, {}, _csv_minimo(tmp_path), tmp_path, 0.5, len(X))
     assert metadata["model_version"] == "0.2.0+a1b2c3d"
-    assert metadata["fingerprint"] == "fp-de-prueba"
+    assert metadata["fingerprint"] == "fp-de-ci"
 
 
 def test_version_local_sin_entorno(tmp_path, datos_sinteticos):
