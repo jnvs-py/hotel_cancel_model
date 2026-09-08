@@ -47,6 +47,16 @@ jobs:
         run: uv sync --frozen
 
       # El modelo es artefacto de build: se entrena ANTES de construir la imagen.
+      # La version se DERIVA aqui (pyproject + sha de git) y el fingerprint
+      # identifica todo lo que afecta al entrenamiento: codigo, datos y lock.
+      - name: Derivar version del modelo
+        run: |
+          BASE=$(grep -m1 '^version' pyproject.toml | cut -d '"' -f2)
+          SHA=$(git rev-parse --short HEAD)
+          FP=$(git ls-files src data pyproject.toml uv.lock | xargs sha256sum | sha256sum | cut -c1-16)
+          echo "MODEL_VERSION=${BASE}+${SHA}" >> "$GITHUB_ENV"
+          echo "FINGERPRINT=${FP}" >> "$GITHUB_ENV"
+
       - name: Entrenar el modelo
         run: uv run python -m src.train
 

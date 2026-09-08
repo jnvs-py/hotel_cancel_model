@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, model_validator
 
 from src.config import CATEGORICAL_LEVELS, MODELS_DIR, NUMERIC_RANGES
-from src.model import MODEL_VERSION, load_model
+from src.model import load_model, model_version
 from src.schema import FEATURE_ORDER
 
 logger = logging.getLogger("api")
@@ -55,7 +55,7 @@ async def lifespan(app):
 
 app = FastAPI(
     title="API de cancelacion de reservas",
-    version=MODEL_VERSION,
+    version=model_version(),
     summary="Predice si una reserva de hotel sera cancelada",
     lifespan=lifespan,
 )
@@ -209,7 +209,7 @@ def predict(peticion: PredictRequest):
         "prediction": "Canceled" if probabilidad >= umbral else "Not_Canceled",
         "probability": round(probabilidad, 4),
         "threshold": umbral,
-        "model_version": ml["metadata"].get("model_version", MODEL_VERSION),
+        "model_version": ml["metadata"].get("model_version") or model_version(),
         "request_id": str(uuid.uuid4()),
     }
 

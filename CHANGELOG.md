@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## [0.2.0] - 2026-09-07
+
+### Agregado
+
+- Versionamiento del modelo gestionado por CI: `save_model` lee
+  `MODEL_VERSION` del entorno (CI la deriva como `{pyproject}+{sha}`) con
+  fallback `0.1.0-dev` en local.
+- Campo `fingerprint` en la metadata: hash de codigo, datos y lock. Es la
+  identidad completa de lo que produjo el artefacto.
+- Workflow `release.yml`: en cada push a `main` entrena, construye la imagen
+  versionada, le hace smoke test y publica un GitHub Release con el joblib y
+  la metadata adjuntos. Dedup por fingerprint: sin cambio en codigo o datos,
+  no publica nada.
+- Las notas del release incluyen metricas temporales y matriz de confusion
+  generadas desde la metadata.
+
+### Cambiado
+
+- `src/api.py` consume la version via `model_version()` en vez de la constante
+  fija `MODEL_VERSION = "0.1.0"` de `src/model.py:28`.
+
 ## [0.1.0] - 2026-09-06
 
 ### Agregado

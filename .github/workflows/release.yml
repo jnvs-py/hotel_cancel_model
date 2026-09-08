@@ -1,0 +1,136 @@
+# Release automatico del modelo. Cada push a main cuyo fingerprint cambie
+# (codigo, datos o lock) produce un GitHub Release con el artefacto entrenado.
+# Un commit que solo toca docs o README NO crea release: el dedup lo salta.
+
+name: Release modelo
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-modelo
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sincronizar dependencias
+        run: uv sync --frozen
+
+      - name: Lint y tests (mismo gate que CI)
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run pytest --cov=src --cov-fail-under=80
+
+      - name: Derivar version del modelo
+        run: |
+          BASE=$(grep -m1 '^version' pyproject.toml | cut -d '"' -f2)
+          SHA=$(git rev-parse --short HEAD)
+          FP=$(git ls-files src data pyproject.toml uv.lock | xargs sha256sum | sha256sum | cut -c1-16)
+          TAG="model-${BASE}-${SHA}"
+          echo "MODEL_VERSION=${BASE}+${SHA}" >> "$GITHUB_ENV"
+          echo "FINGERPRINT=${FP}" >> "$GITHUB_ENV"
+          echo "TAG=${TAG}" >> "$GITHUB_ENV"
+
+      - name: Entrenar el modelo
+        run: uv run python -m src.train
+
+      - name: Construir imagen versionada
+        run: docker build --platform linux/amd64 -t "hito1-reservas:${TAG}" .
+
+      - name: Smoke test del contenedor
+        run: |
+          docker run -d --name api -p 8000:8000 -e PORT=8000 "hito1-reservas:${TAG}"
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8000/health && exit 0
+            sleep 1
+          done
+          echo "El contenedor no respondio en 30s. Logs:"
+          docker logs api
+          exit 1
+        shell: bash
+
+      - name: Verificar que la imagen sirve la version derivada
+        run: |
+          SERVIDA=$(curl -sf http://localhost:8000/model-info | python -c "import json,sys; print(json.load(sys.stdin)['model_version'])")
+          if [ "$SERVIDA" != "$MODEL_VERSION" ]; then
+            echo "La imagen sirve version '$SERVIDA' pero se esperaba '$MODEL_VERSION'"
+            exit 1
+          fi
+
+      # Dedup: si el ultimo release ya tiene este fingerprint, el modelo no
+      # cambio y no hay nada que publicar.
+      - name: Comprobar si el modelo cambio
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PREV_FP=""
+          mkdir -p prev
+          if gh release view --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release download --repo "$GITHUB_REPOSITORY" --pattern "metadata.json" --dir prev 2>/dev/null || true
+            if [ -f prev/metadata.json ]; then
+              PREV_FP=$(python -c "import json; print(json.load(open('prev/metadata.json')).get('fingerprint',''))")
+            fi
+          fi
+          echo "fingerprint anterior: ${PREV_FP:-ninguno}"
+          if [ "$PREV_FP" = "$FINGERPRINT" ]; then
+            echo "release_needed=false" >> "$GITHUB_ENV"
+          else
+            echo "release_needed=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Generar notas del release
+        if: env.release_needed == 'true'
+        run: |
+          python - <<'EOF' > notas.md
+          import json
+
+          m = json.load(open("models/metadata.json"))
+          t = m["metrics"]["temporal"]
+          print(f"## Modelo {m['model_version']}")
+          print()
+          print(f"- Entrenado: {m['trained_at']} | datos: sha256:{m['data_sha256']} ({m['n_rows_train']} filas)")
+          print(f"- scikit-learn {m['sklearn_version']} / Python {m['python_version']}")
+          print(f"- Umbral (validacion): {m['threshold']}")
+          print()
+          print("### Metricas (split temporal, honestas)")
+          print()
+          print(f"| ROC-AUC | PR-AUC | F1 | Precision | Recall |")
+          print(f"|---|---|---|---|---|")
+          print(f"| {t['roc_auc']:.4f} | {t['pr_auc']:.4f} | {t['f1']:.4f} | {t['precision']:.4f} | {t['recall']:.4f} |")
+          c = t["confusion"]
+          print()
+          print(f"Matriz de confusion: tn={c['tn']} fp={c['fp']} fn={c['fn']} tp={c['tp']}")
+          print()
+          print(f"Fingerprint: `{m['fingerprint']}`")
+          print()
+          print("### Metricas (split aleatorio, solo comparativo)")
+          print()
+          a = m["metrics"]["aleatorio"]
+          print(f"ROC-AUC {a['roc_auc']:.4f} (inflado, no usar para decidir)")
+          EOF
+          cat notas.md
+
+      - name: Publicar release
+        if: env.release_needed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Modelo $TAG" \
+            --notes-file notas.md \
+            models/pipeline.joblib models/metadata.json

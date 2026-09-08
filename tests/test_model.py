@@ -5,7 +5,9 @@ import json
 import pytest
 import sklearn
 
-from src.model import ARTIFACT_NAME, METADATA_NAME, load_model
+from src.config import TARGET
+from src.model import ARTIFACT_NAME, METADATA_NAME, build_pipeline, load_model, save_model
+from src.schema import FEATURE_ORDER
 
 
 def test_guarda_artefacto_y_metadata(modelo_entrenado):
@@ -50,3 +52,45 @@ def test_falla_si_cambio_la_version_de_sklearn(modelo_entrenado):
     meta_path.write_text(json.dumps(meta), encoding="utf-8")
     with pytest.raises(ValueError, match=sklearn.__version__):
         load_model(modelo_entrenado)
+
+
+def _csv_minimo(tmp_path):
+    """save_model hashea el dataset: para estos tests basta un CSV de mentira."""
+    ruta = tmp_path / "datos.csv"
+    ruta.write_text("a,b\n1,2\n", encoding="utf-8")
+    return ruta
+
+
+def test_version_inyectada_por_ci(monkeypatch, tmp_path, datos_sinteticos):
+    """CI deriva la version de git y la pasa por entorno; save_model la hereda."""
+    monkeypatch.setenv("MODEL_VERSION", "0.2.0+a1b2c3d")
+    X = datos_sinteticos[FEATURE_ORDER]
+    y = (datos_sinteticos[TARGET] == "Canceled").astype(int)
+    pipeline = build_pipeline().fit(X, y)
+    metadata = save_model(
+        pipeline,
+        {},
+        _csv_minimo(tmp_path),
+        tmp_path,
+        0.5,
+        len(X),
+        fingerprint="fp-de-prueba",
+    )
+    assert metadata["model_version"] == "0.2.0+a1b2c3d"
+    assert metadata["fingerprint"] == "fp-de-prueba"
+
+
+def test_version_local_sin_entorno(tmp_path, datos_sinteticos):
+    """Sin CI, el artefacto queda marcado como dev: nunca una version mentirosa."""
+    X = datos_sinteticos[FEATURE_ORDER]
+    y = (datos_sinteticos[TARGET] == "Canceled").astype(int)
+    pipeline = build_pipeline().fit(X, y)
+    metadata = save_model(pipeline, {}, _csv_minimo(tmp_path), tmp_path, 0.5, len(X))
+    assert metadata["model_version"] == "0.1.0-dev"
+    assert "fingerprint" not in metadata
+
+
+def test_fingerprint_en_fixture_sin_inyeccion(modelo_entrenado):
+    """El fixture del conftest no pasa fingerprint: la clave no debe inventarse."""
+    meta = json.loads((modelo_entrenado / METADATA_NAME).read_text(encoding="utf-8"))
+    assert "fingerprint" not in meta

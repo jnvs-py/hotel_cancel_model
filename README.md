@@ -57,6 +57,25 @@ docker build --platform linux/amd64 -t hito1-reservas:local .
 docker run --rm -p 8000:8000 -e PORT=8000 hito1-reservas:local
 ```
 
+## Versionamiento del modelo
+
+La version NO se edita a mano: la deriva CI en cada entrenamiento como
+`{version de pyproject.toml}+{sha corto de git}` (ej. `0.1.0+a1b2c3d`). En
+local sin la variable el artefacto queda marcado `0.1.0-dev`.
+
+La `metadata.json` ademas trae un `fingerprint`: hash de todo lo que afecta al
+entrenamiento (codigo en `src/`, dataset, `pyproject.toml` y `uv.lock`).
+
+El workflow `.github/workflows/release.yml` corre en cada push a `main`:
+
+1. Gate de calidad completo (lint + tests)
+2. Entrena, construye la imagen versionada y le hace smoke test
+3. Compara el fingerprint contra el ultimo release: si no cambio, no publica nada
+4. Si cambio, publica un GitHub Release `model-0.1.0-a1b2c3d` con
+   `pipeline.joblib` y `metadata.json` adjuntos
+
+Para forzar un release nuevo basta un commit que toque codigo o datos.
+
 ## Estructura
 
 ```

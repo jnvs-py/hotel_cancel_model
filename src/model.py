@@ -6,6 +6,7 @@ endpoint, entrenamiento e inferencia divergirian en silencio.
 
 import hashlib
 import json
+import os
 import platform
 from datetime import date
 
@@ -25,9 +26,15 @@ from src.schema import (
     derived_feature_names,
 )
 
-MODEL_VERSION = "0.1.0"
+MODEL_VERSION_FALLBACK = "0.1.0-dev"
+VERSION_ENV = "MODEL_VERSION"
 ARTIFACT_NAME = "pipeline.joblib"
 METADATA_NAME = "metadata.json"
+
+
+def model_version():
+    """Version del modelo. En CI la inyecta el workflow; local queda el fallback."""
+    return os.environ.get(VERSION_ENV, MODEL_VERSION_FALLBACK)
 
 
 def build_pipeline():
@@ -56,12 +63,16 @@ def build_pipeline():
     )
 
 
-def save_model(pipeline, metrics, data_path, model_dir, threshold, n_train):
-    """Guarda el artefacto y su metadata. Nunca pickle.dump directo."""
+def save_model(pipeline, metrics, data_path, model_dir, threshold, n_train, fingerprint=None):
+    """Guarda el artefacto y su metadata. Nunca pickle.dump directo.
+
+    La version viene del entorno (CI la deriva del sha de git); el fingerprint
+    identifica TODO lo que afecta al entrenamiento: codigo, datos y lock.
+    """
     model_dir.mkdir(parents=True, exist_ok=True)
     joblib.dump(pipeline, model_dir / ARTIFACT_NAME)
     metadata = {
-        "model_version": MODEL_VERSION,
+        "model_version": model_version(),
         "sklearn_version": sklearn.__version__,
         "python_version": platform.python_version(),
         "trained_at": date.today().isoformat(),
@@ -71,6 +82,8 @@ def save_model(pipeline, metrics, data_path, model_dir, threshold, n_train):
         "threshold": float(threshold),
         "metrics": metrics,
     }
+    if fingerprint:
+        metadata["fingerprint"] = fingerprint
     (model_dir / METADATA_NAME).write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     return metadata
 
