@@ -1,0 +1,287 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Pipeline de datos — Hito 1",
+    "quality_profile": "showcase",
+    "output": "diagrams/archify/pipeline_datos.html",
+    "viewBox": [
+      960,
+      410
+    ]
+  },
+  "stages": [
+    {
+      "label": "Fuentes"
+    },
+    {
+      "label": "Ingesta"
+    },
+    {
+      "label": "Proceso"
+    },
+    {
+      "label": "Artefacto"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "csv",
+      "type": "database",
+      "label": "CSV crudo",
+      "sublabel": "data/hotel_reservations.csv",
+      "stage": 0,
+      "row": 1,
+      "tag": "raw",
+      "width": 112,
+      "height": 44,
+      "yOffset": -34
+    },
+    {
+      "id": "carga",
+      "type": "backend",
+      "label": "load_raw",
+      "sublabel": "src/data.py",
+      "stage": 1,
+      "row": 0,
+      "tag": "errores legibles",
+      "width": 96,
+      "height": 44,
+      "yOffset": 0
+    },
+    {
+      "id": "eda",
+      "type": "backend",
+      "label": "EDA",
+      "sublabel": "reports/eda.md",
+      "stage": 1,
+      "row": 2,
+      "tag": "decisiones",
+      "width": 96,
+      "height": 44,
+      "yOffset": -68
+    },
+    {
+      "id": "limpieza",
+      "type": "backend",
+      "label": "clean_training",
+      "sublabel": "src/clean.py",
+      "stage": 2,
+      "row": 0,
+      "tag": "tolerante",
+      "width": 96,
+      "height": 44,
+      "yOffset": 0
+    },
+    {
+      "id": "split",
+      "type": "backend",
+      "label": "split_temporal",
+      "sublabel": "src/train.py",
+      "stage": 2,
+      "row": 1,
+      "tag": "3 ventanas",
+      "width": 96,
+      "height": 44,
+      "yOffset": -34
+    },
+    {
+      "id": "pipeline",
+      "type": "backend",
+      "label": "build_pipeline",
+      "sublabel": "src/model.py",
+      "stage": 2,
+      "row": 2,
+      "tag": "derivadas + HGB",
+      "width": 96,
+      "height": 44,
+      "yOffset": -68
+    },
+    {
+      "id": "joblib",
+      "type": "database",
+      "label": "pipeline.joblib",
+      "sublabel": "models/",
+      "stage": 3,
+      "row": 0,
+      "tag": "artefacto",
+      "width": 96,
+      "height": 44,
+      "yOffset": 0
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "API /predict",
+      "sublabel": "Canceled / Not_Canceled",
+      "stage": 3,
+      "row": 1,
+      "tag": "umbral 0.67",
+      "width": 112,
+      "height": 44,
+      "yOffset": -34
+    },
+    {
+      "id": "metadata",
+      "type": "database",
+      "label": "metadata.json",
+      "sublabel": "version + fingerprint",
+      "stage": 3,
+      "row": 2,
+      "tag": "auditable",
+      "width": 112,
+      "height": 44,
+      "yOffset": -68
+    }
+  ],
+  "flows": [
+    {
+      "id": "lectura",
+      "from": "csv",
+      "to": "carga",
+      "label": "lectura cruda",
+      "classification": "raw",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "exploracion",
+      "from": "carga",
+      "to": "eda",
+      "label": "exploracion",
+      "classification": "informe",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        315,
+        200
+      ]
+    },
+    {
+      "id": "filas-validas",
+      "from": "carga",
+      "to": "limpieza",
+      "label": "filas validas",
+      "classification": "tolerante",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "ventanas",
+      "from": "limpieza",
+      "to": "split",
+      "label": "ventanas",
+      "classification": "train/val/test",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        530,
+        190
+      ]
+    },
+    {
+      "id": "fit",
+      "from": "split",
+      "to": "pipeline",
+      "label": "X train, y train",
+      "classification": "entrenamiento",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        530,
+        270
+      ]
+    },
+    {
+      "id": "artefacto",
+      "from": "pipeline",
+      "to": "joblib",
+      "label": "todo el historial",
+      "classification": "save_model",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        633,
+        240
+      ]
+    },
+    {
+      "id": "metadata-flow",
+      "from": "pipeline",
+      "to": "metadata",
+      "label": "umbral + metricas",
+      "classification": "test intocado",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        700,
+        352
+      ]
+    },
+    {
+      "id": "carga-defensiva",
+      "from": "joblib",
+      "to": "api",
+      "label": "load_model",
+      "classification": "defensivo",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "straight",
+      "width": 2.5,
+      "labelAt": [
+        865,
+        190
+      ]
+    },
+    {
+      "id": "version-servida",
+      "from": "metadata",
+      "to": "api",
+      "label": "version servida",
+      "classification": "metadata",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "route": "straight",
+      "labelAt": [
+        865,
+        270
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Ruta principal",
+      "items": [
+        "El dato crudo avanza de izquierda a derecha hasta la prediccion",
+        "El pipeline de sklearn contiene TODO el preprocesamiento dentro",
+        "El orden de features queda congelado por FEATURE_ORDER"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Evaluacion honesta",
+      "items": [
+        "El umbral (0.67) se elige en la ventana de validacion: el test no se toca hasta el reporte",
+        "El split aleatorio existe solo como comparativo del EDA",
+        "F1 honesto 0.621 frente a 0.747 del split que se miente a si mismo"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Artefacto versionado",
+      "items": [
+        "metadata.json trae model_version derivada por CI y fingerprint",
+        "load_model falla claro si falta o si cambia sklearn",
+        "La API carga el artefacto una sola vez en el lifespan"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,449 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Arquitectura ML — Hito 1",
+    "quality_profile": "showcase",
+    "output": "diagrams/archify/arquitectura_ml.html",
+    "viewBox": [
+      1040,
+      430
+    ]
+  },
+  "components": [
+    {
+      "id": "schema",
+      "type": "backend",
+      "label": "schema.py",
+      "sublabel": "FEATURE_ORDER congelado",
+      "pos": [
+        30,
+        80
+      ],
+      "size": [
+        170,
+        70
+      ]
+    },
+    {
+      "id": "config",
+      "type": "backend",
+      "label": "config.py",
+      "sublabel": "rutas, seed, rangos",
+      "pos": [
+        30,
+        185
+      ],
+      "size": [
+        170,
+        70
+      ]
+    },
+    {
+      "id": "eda",
+      "type": "backend",
+      "label": "eda.py",
+      "sublabel": "hallazgos",
+      "pos": [
+        280,
+        80
+      ],
+      "size": [
+        100,
+        70
+      ]
+    },
+    {
+      "id": "train",
+      "type": "backend",
+      "label": "train.py",
+      "sublabel": "split temporal",
+      "pos": [
+        280,
+        185
+      ],
+      "size": [
+        100,
+        70
+      ]
+    },
+    {
+      "id": "eval",
+      "type": "backend",
+      "label": "evaluate.py",
+      "sublabel": "umbral y metricas",
+      "pos": [
+        410,
+        80
+      ],
+      "size": [
+        110,
+        70
+      ]
+    },
+    {
+      "id": "model",
+      "type": "backend",
+      "label": "model.py",
+      "sublabel": "pipeline + save_model",
+      "pos": [
+        410,
+        185
+      ],
+      "size": [
+        110,
+        70
+      ]
+    },
+    {
+      "id": "joblib",
+      "type": "database",
+      "label": "pipeline.joblib",
+      "sublabel": "artefacto entrenado",
+      "pos": [
+        600,
+        80
+      ],
+      "size": [
+        120,
+        70
+      ],
+      "tag": "build"
+    },
+    {
+      "id": "metadata",
+      "type": "database",
+      "label": "metadata.json",
+      "sublabel": "version + fingerprint",
+      "pos": [
+        600,
+        185
+      ],
+      "size": [
+        120,
+        70
+      ],
+      "tag": "auditable"
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "api.py FastAPI",
+      "sublabel": "lifespan: una carga",
+      "pos": [
+        820,
+        80
+      ],
+      "size": [
+        140,
+        70
+      ]
+    },
+    {
+      "id": "docker",
+      "type": "cloud",
+      "label": "Dockerfile",
+      "sublabel": "no-root, amd64",
+      "pos": [
+        820,
+        185
+      ],
+      "size": [
+        140,
+        70
+      ]
+    },
+    {
+      "id": "ci",
+      "type": "messagebus",
+      "label": "CI/CD GitHub Actions",
+      "sublabel": "ci.yml + release.yml",
+      "pos": [
+        300,
+        330
+      ],
+      "size": [
+        200,
+        60
+      ],
+      "tag": "gobierna"
+    },
+    {
+      "id": "consumidor",
+      "type": "external",
+      "label": "Consumidor",
+      "sublabel": "curl / Docs UI",
+      "pos": [
+        820,
+        330
+      ],
+      "size": [
+        140,
+        70
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Contrato de datos",
+      "wraps": [
+        "schema",
+        "config"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Entrenamiento",
+      "wraps": [
+        "eda",
+        "train",
+        "eval",
+        "model"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Artefacto versionado",
+      "wraps": [
+        "joblib",
+        "metadata"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Servicio",
+      "wraps": [
+        "api",
+        "docker"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "contrato-schema",
+      "from": "schema",
+      "to": "train",
+      "label": "features y contratos",
+      "fromSide": "right",
+      "toSide": "top",
+      "via": [
+        [
+          240,
+          115
+        ],
+        [
+          240,
+          160
+        ],
+        [
+          330,
+          160
+        ]
+      ],
+      "labelAt": [
+        238,
+        159
+      ]
+    },
+    {
+      "id": "contrato-config",
+      "from": "config",
+      "to": "train",
+      "label": "constantes",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight",
+      "labelAt": [
+        240,
+        242
+      ]
+    },
+    {
+      "id": "eda-decisiones",
+      "from": "eda",
+      "to": "train",
+      "label": "decisiones",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "straight",
+      "labelAt": [
+        365,
+        168
+      ]
+    },
+    {
+      "id": "train-model",
+      "from": "train",
+      "to": "model",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight"
+    },
+    {
+      "id": "model-eval",
+      "from": "model",
+      "to": "eval",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "route": "straight"
+    },
+    {
+      "id": "artefacto-joblib",
+      "from": "model",
+      "to": "joblib",
+      "label": "guarda",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left",
+      "via": [
+        [
+          560,
+          220
+        ],
+        [
+          560,
+          115
+        ]
+      ],
+      "labelAt": [
+        580,
+        98
+      ]
+    },
+    {
+      "id": "artefacto-metadata",
+      "from": "model",
+      "to": "metadata",
+      "label": "auditoria",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight",
+      "labelAt": [
+        560,
+        245
+      ]
+    },
+    {
+      "id": "carga-defensiva",
+      "from": "joblib",
+      "to": "api",
+      "label": "load_model",
+      "variant": "emphasis",
+      "width": 2.5,
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight",
+      "labelAt": [
+        770,
+        98
+      ]
+    },
+    {
+      "id": "version-servida",
+      "from": "metadata",
+      "to": "api",
+      "label": "version",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "via": [
+        [
+          770,
+          220
+        ],
+        [
+          770,
+          175
+        ],
+        [
+          890,
+          175
+        ]
+      ],
+      "labelAt": [
+        815,
+        162
+      ]
+    },
+    {
+      "id": "api-docker",
+      "from": "api",
+      "to": "docker",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "straight"
+    },
+    {
+      "id": "docker-consumidor",
+      "from": "docker",
+      "to": "consumidor",
+      "label": "imagen amd64",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "straight",
+      "labelAt": [
+        945,
+        292
+      ]
+    },
+    {
+      "id": "ci-gobierna",
+      "from": "ci",
+      "to": "metadata",
+      "label": "deriva version, dedup",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "via": [
+        [
+          560,
+          360
+        ],
+        [
+          560,
+          285
+        ],
+        [
+          660,
+          285
+        ]
+      ],
+      "labelAt": [
+        600,
+        300
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Un solo contrato",
+      "items": [
+        "schema.py congela el orden de features: entrenamiento e inferencia comparten columna por posicion",
+        "La limpieza tolerante alimenta el entrenamiento; la estricta protege /predict",
+        "config.py es la unica fuente de verdad de rutas, seed y rangos"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Artefacto auditable",
+      "items": [
+        "Todo el preprocesamiento vive dentro del Pipeline de sklearn",
+        "metadata.json registra model_version derivada por CI y fingerprint de codigo+datos+lock",
+        "load_model rechaza el artefacto si la version de sklearn no coincide"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Servicio reproducible",
+      "items": [
+        "La imagen se construye con el artefacto ya entrenado: no se entrena en runtime",
+        "El contenedor corre como appuser no-root en amd64",
+        "CI/CD deriva la version y publica releases con el joblib adjunto"
+      ]
+    }
+  ]
+}

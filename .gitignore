@@ -23,3 +23,10 @@ predicciones*.csv
 .vscode/
 .idea/
 .DS_Store
+
+# Diagramas: solo los entregables archify (HTML + fuente JSON) y el indice.
+# La evidencia visual-check queda en disco local, no se versiona.
+diagrams/*
+!diagrams/README.md
+!diagrams/archify/
+diagrams/archify/*.visual-check.*

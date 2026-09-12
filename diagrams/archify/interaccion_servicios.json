@@ -1,0 +1,202 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Interacción entre servicios — Hito 1",
+    "quality_profile": "showcase",
+    "output": "diagrams/archify/interaccion_servicios.html",
+    "viewBox": [
+      1140,
+      500
+    ]
+  },
+  "lanes": [
+    {
+      "id": "gh",
+      "label": "CI (GitHub)"
+    },
+    {
+      "id": "rejeje",
+      "label": "Release y ejecución"
+    }
+  ],
+  "mainPath": [
+    "push",
+    "calidad",
+    "dockerjob",
+    "contenedor",
+    "consumidor"
+  ],
+  "nodes": [
+    {
+      "id": "push",
+      "lane": "gh",
+      "col": 0,
+      "type": "frontend",
+      "label": "Push a main",
+      "sublabel": "git push",
+      "width": 106,
+      "yOffset": 0,
+      "height": 44
+    },
+    {
+      "id": "calidad",
+      "lane": "gh",
+      "col": 1,
+      "type": "security",
+      "label": "Workflow CI",
+      "sublabel": "ruff + pytest",
+      "tag": "gate",
+      "width": 106,
+      "yOffset": 0,
+      "height": 44
+    },
+    {
+      "id": "dockerjob",
+      "lane": "gh",
+      "col": 2,
+      "type": "backend",
+      "label": "Job docker",
+      "sublabel": "entrena + build",
+      "tag": "pyproject+sha",
+      "width": 106,
+      "yOffset": 0,
+      "height": 44
+    },
+    {
+      "id": "dedup",
+      "lane": "rejeje",
+      "col": 1,
+      "type": "security",
+      "label": "Dedup",
+      "sublabel": "huella de cambio",
+      "width": 106,
+      "yOffset": 0,
+      "height": 44
+    },
+    {
+      "id": "release",
+      "lane": "rejeje",
+      "col": 2,
+      "type": "database",
+      "label": "GitHub Release",
+      "sublabel": "joblib + metadata.json",
+      "tag": "con metricas",
+      "width": 106,
+      "yOffset": 0,
+      "height": 44
+    },
+    {
+      "id": "contenedor",
+      "lane": "rejeje",
+      "col": 4,
+      "type": "backend",
+      "label": "Contenedor API",
+      "sublabel": "docker run :9123",
+      "width": 106,
+      "yOffset": 0,
+      "height": 44
+    },
+    {
+      "id": "consumidor",
+      "lane": "rejeje",
+      "col": 5,
+      "type": "external",
+      "label": "Evaluador",
+      "sublabel": "curl, /docs",
+      "width": 106,
+      "yOffset": 0,
+      "height": 44
+    },
+    {
+      "id": "cloud",
+      "lane": "rejeje",
+      "col": 3,
+      "type": "cloud",
+      "label": "Cloud pendiente",
+      "sublabel": "Cloud Run u otro",
+      "tag": "auth interactiva",
+      "width": 106,
+      "yOffset": 0,
+      "height": 44
+    }
+  ],
+  "edges": [
+    {
+      "from": "push",
+      "to": "calidad",
+      "label": "push"
+    },
+    {
+      "from": "calidad",
+      "to": "dockerjob",
+      "label": "verde"
+    },
+    {
+      "from": "calidad",
+      "to": "dedup",
+      "label": "mismo gate"
+    },
+    {
+      "from": "dockerjob",
+      "to": "contenedor",
+      "label": "imagen:{version}"
+    },
+    {
+      "from": "dedup",
+      "to": "release",
+      "label": "si cambio"
+    },
+    {
+      "from": "release",
+      "to": "contenedor",
+      "label": "rebuild local",
+      "variant": "dashed",
+      "role": "async"
+    },
+    {
+      "from": "contenedor",
+      "to": "consumidor",
+      "label": "/predict + version",
+      "variant": "emphasis"
+    },
+    {
+      "from": "contenedor",
+      "to": "cloud",
+      "label": "mismo proceso + API_KEY",
+      "variant": "dashed",
+      "role": "async",
+      "fromSide": "left",
+      "toSide": "right"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Un push, dos workflows",
+      "items": [
+        "CI deriva la version del modelo ({pyproject}+{sha}) y el fingerprint de lo que afecta al entrenamiento",
+        "El mismo gate de calidad corre en ambos workflows",
+        "El job de docker construye la imagen con el modelo ya entrenado"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Dedup por fingerprint",
+      "items": [
+        "Un commit que solo toca docs no cambia el fingerprint: no hay release",
+        "Si el fingerprint cambio, el release publica joblib y metadata.json",
+        "El caso sin cambio termina silencioso: nada que publicar"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Consumo y futuro",
+      "items": [
+        "El contenedor sirve /health, /ready, /predict y /model-info en el puerto que pida PORT",
+        "El consumidor recibe prediccion, model_version y request_id",
+        "El despliegue cloud reutiliza el mismo proceso y activara API_KEY"
+      ]
+    }
+  ]
+}
