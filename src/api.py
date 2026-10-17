@@ -6,17 +6,28 @@ del handler se deserializaria en cada request.
 """
 
 import logging
-import uuid
+import time
 from contextlib import asynccontextmanager
 from typing import Literal
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, model_validator
 
 from src.config import CATEGORICAL_LEVELS, MODELS_DIR, NUMERIC_RANGES
 from src.model import load_model, model_version
+from src.observability import (
+    configure_logging,
+    features_hash,
+    new_request_id,
+    request_id_var,
+    safe_features,
+    stage,
+    stages_ms,
+)
 from src.schema import FEATURE_ORDER
 
 logger = logging.getLogger("api")
@@ -41,14 +52,19 @@ ml = {}
 
 @asynccontextmanager
 async def lifespan(app):
+    # Logging JSON UNA vez, al arrancar: todo evento va a stdout, nunca a archivo.
+    configure_logging()
     try:
         ml["pipeline"], ml["metadata"] = load_model(MODELS_DIR)
-        logger.info("Modelo cargado: version %s", ml["metadata"].get("model_version"))
+        logger.info(
+            "model_loaded",
+            extra={"model_version": ml["metadata"].get("model_version")},
+        )
     except (FileNotFoundError, ValueError) as exc:
         # La app arranca igual y /ready responde 503. Un contenedor que muere
         # al arrancar no deja leer el log del error en la nube.
         ml["error"] = str(exc)
-        logger.error("No se pudo cargar el modelo: %s", exc)
+        logger.critical("model_load_failed", extra={"error": str(exc)})
     yield
     ml.clear()
 
@@ -59,6 +75,15 @@ app = FastAPI(
     summary="Predice si una reserva de hotel sera cancelada",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def request_context(request: Request, call_next):
+    """Correlaciona log <-> respuesta: X-Request-ID entra o se genera, y sale."""
+    rid = new_request_id(request.headers.get("x-request-id"))
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = rid
+    return response
 
 
 def _campo(col, descripcion):
@@ -159,13 +184,28 @@ class ReadyResponse(BaseModel):
 
 @app.exception_handler(Exception)
 async def _errores_no_previstos(request: Request, exc: Exception):
-    request_id = str(uuid.uuid4())
-    # El traceback va al log, nunca a la respuesta: filtra rutas y estructura.
-    logger.exception("error no previsto request_id=%s", request_id)
+    # Red de seguridad para errores fuera del camino de prediccion (el fallo
+    # del pipeline ya se registra como prediction_failed en el handler).
+    # El traceback va al log, nunca a la respuesta.
+    request_id = request_id_var.get()
+    logger.error(
+        "unhandled_error",
+        exc_info=True,
+        extra={"path": request.url.path, "status": "error"},
+    )
     return JSONResponse(
         status_code=500,
         content={"detail": "Error interno", "request_id": request_id},
     )
+
+
+@app.exception_handler(RequestValidationError)
+async def _errores_de_contrato(request: Request, exc: RequestValidationError):
+    """422 del contrato: se registra que campo se rompio, con nivel WARNING."""
+    campos = sorted({str(error["loc"][-1]) for error in exc.errors()})
+    logger.warning("input_invalid", extra={"path": request.url.path, "fields": campos})
+    # Mismo formato que el default de FastAPI: no rompe a los consumidores.
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(exc.errors())})
 
 
 @app.get("/health", response_model=HealthResponse, tags=["salud"])
@@ -199,18 +239,55 @@ def predict(peticion: PredictRequest):
     if "pipeline" not in ml:
         raise HTTPException(status_code=503, detail="Modelo no disponible")
 
-    # DataFrame de una fila con el ORDEN congelado: sklearn valida por nombre
-    # con DataFrame, pero por posicion con array. Mandarlas desordenadas daria
-    # predicciones erroneas sin lanzar excepcion.
-    fila = pd.DataFrame([peticion.model_dump()], columns=FEATURE_ORDER)
-    probabilidad = float(ml["pipeline"].predict_proba(fila)[0, 1])
-    umbral = float(ml["metadata"].get("threshold", 0.5))
+    version = ml["metadata"].get("model_version") or model_version()
+    inicio = time.perf_counter()
+    payload = peticion.model_dump()
+
+    try:
+        with stage("to_frame"):
+            # DataFrame de una fila con el ORDEN congelado: sklearn valida por
+            # nombre con DataFrame, pero por posicion con array. Mandarlas
+            # desordenadas daria predicciones erroneas sin lanzar excepcion.
+            fila = pd.DataFrame([payload], columns=FEATURE_ORDER)
+        with stage("predict"):
+            probabilidad = float(ml["pipeline"].predict_proba(fila)[0, 1])
+        with stage("postprocess"):
+            umbral = float(ml["metadata"].get("threshold", 0.5))
+            etiqueta = "Canceled" if probabilidad >= umbral else "Not_Canceled"
+    except Exception:
+        logger.error(
+            "prediction_failed",
+            exc_info=True,
+            extra={"model_version": version, "features_hash": features_hash(payload)},
+        )
+        raise
+
+    latencia_ms = round((time.perf_counter() - inicio) * 1000, 3)
+    logger.info(
+        "prediction",
+        extra={
+            "model_version": version,
+            "features_hash": features_hash(payload),
+            "prediction": etiqueta,
+            "probability": round(probabilidad, 4),
+            "threshold": umbral,
+            "latency_ms": latencia_ms,
+            "stage_ms": stages_ms(),
+            "status": "success",
+        },
+    )
+    # Evento separado con los valores del contrato: es la entrada del job de
+    # drift. Aqui no hay PII, por eso los valores salen completos.
+    logger.info(
+        "prediction_features",
+        extra={"model_version": version, **safe_features(payload)},
+    )
     return {
-        "prediction": "Canceled" if probabilidad >= umbral else "Not_Canceled",
+        "prediction": etiqueta,
         "probability": round(probabilidad, 4),
         "threshold": umbral,
-        "model_version": ml["metadata"].get("model_version") or model_version(),
-        "request_id": str(uuid.uuid4()),
+        "model_version": version,
+        "request_id": request_id_var.get(),
     }
 
 
