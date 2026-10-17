@@ -1,0 +1,76 @@
+# Job de drift programado.
+#
+# Doble proposito:
+#   1. Vigilancia diaria: corre el job sobre una ventana de la distribucion de
+#      validacion y deja el reporte como artifact.
+#   2. Prueba de vida del detector: simula un drift (lead_time +120) y FALLA si
+#      el job no lo detecta. Un detector muerto es peor que ninguno.
+
+name: Drift programado
+
+on:
+  schedule:
+    - cron: "0 6 * * *" # diario, 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # El grupo monitoring trae scipy; no vive en la imagen de la API.
+      - name: Sincronizar dependencias (dev + monitoring)
+        run: uv sync --frozen --group dev --group monitoring
+
+      - name: Entrenar (genera el baseline)
+        run: uv run python -m src.train
+
+      - name: Generar la ventana de control y la ventana con drift
+        run: |
+          uv run python - <<'EOF'
+          import pandas as pd
+          from src.clean import clean_training
+          from src.config import SPLIT_DATE, TARGET, VAL_DATE
+          from src.data import load_raw
+          from src.schema import FEATURE_ORDER
+
+          df = clean_training(load_raw())
+          fecha = df["arrival_full_date"]
+          val = df[(fecha >= pd.Timestamp(VAL_DATE)) & (fecha < pd.Timestamp(SPLIT_DATE))]
+          control = val[FEATURE_ORDER].sample(n=800, random_state=3)
+          control.to_csv("/tmp/ventana_control.csv", index=False)
+          con_drift = control.copy()
+          con_drift["lead_time"] = (con_drift["lead_time"] + 120).clip(upper=443)
+          con_drift.to_csv("/tmp/ventana_drift.csv", index=False)
+          print(f"control: {len(control)} filas | drift: {len(con_drift)} filas")
+          EOF
+        shell: bash
+
+      - name: La ventana de control no debe marcar drift
+        run: |
+          if ! uv run python -m src.monitoring.drift --actual /tmp/ventana_control.csv; then
+            echo "La ventana de control marco drift: revisar el baseline o el umbral"
+            exit 1
+          fi
+
+      - name: El detector debe detectar el drift simulado
+        run: |
+          if uv run python -m src.monitoring.drift --actual /tmp/ventana_drift.csv; then
+            echo "FALLO: el job no detecto un drift simulado (lead_time +120)"
+            exit 1
+          fi
+          echo "OK: el detector sigue vivo"
+
+      - name: Publicar los reportes como artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reportes-drift
+          path: reports/drift/
+          if-no-files-found: warn

@@ -81,3 +81,19 @@ jobs:
           curl -sf -X POST http://localhost:8000/predict \
             -H "Content-Type: application/json" \
             -d @tests/fixtures/request_ejemplo.json
+
+      # Gate de observabilidad (paso S9): la instrumentacion debe viajar en la
+      # imagen, no solo en el entorno de desarrollo.
+      - name: Verificar /metrics y el evento prediction
+        run: |
+          echo "== metricas =="
+          curl -sf http://localhost:8000/metrics | grep -q "ml_requests_total" \
+            || { echo "Falta ml_requests_total en /metrics"; exit 1; }
+          curl -sf http://localhost:8000/metrics | grep -q "ml_model_loaded" \
+            || { echo "Falta ml_model_loaded en /metrics"; exit 1; }
+          echo "== evento de auditoria en los logs =="
+          docker logs api 2>&1 | grep -q '"event": "prediction"' \
+            || { echo "No hay evento prediction en los logs del contenedor"; docker logs api; exit 1; }
+          docker logs api 2>&1 | grep -q '"model_version"' \
+            || { echo "El evento no lleva model_version"; exit 1; }
+          echo "OK: metricas y auditoria presentes"
