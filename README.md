@@ -48,6 +48,7 @@ O con el cliente incluido: `uv run python -m src.client`.
 | `GET /ready` | Readiness. 503 si el artefacto no cargo. |
 | `POST /predict` | La prediccion. |
 | `GET /model-info` | Version, metricas, features y umbral del modelo cargado. |
+| `GET /metrics` | Metricas Prometheus (RED + ML). El scrape no se cuenta como prediccion. |
 
 ## Docker
 
@@ -76,6 +77,94 @@ El workflow `.github/workflows/release.yml` corre en cada push a `main`:
 
 Para forzar un release nuevo basta un commit que toque codigo o datos.
 
+## Observabilidad
+
+Cada peticion deja evidencia sin entrar al contenedor. Los eventos van a
+**stdout como una linea JSON** (nunca a archivo: el disco del contenedor se
+pierde) y el `X-Request-ID` entrante se propaga al log, al header de la
+respuesta y al cuerpo del 500.
+
+```bash
+docker run --rm -p 8000:8000 -e PORT=8000 hito1-reservas:local
+curl -s localhost:8000/metrics | grep ml_requests_total
+```
+
+Esquema del evento `prediction` (Contrato A completo en `src/observability.py`):
+
+| Campo | Ejemplo | Para que |
+|---|---|---|
+| `timestamp`, `level`, `event` | `2026-10-17T19:18:36.820+00:00`, `INFO`, `prediction` | Ordenar y filtrar |
+| `request_id` | `ddb7766f82c34b8aa684d6a229b963ad` | Correlacionar log, header, error y etiqueta real |
+| `model_version` | `0.1.0+55ca619` | Que modelo respondio |
+| `features_hash` | `392492b92cea206f` | Auditar sin guardar el payload; sha256 canonico, nunca `hash()` |
+| `prediction`, `probability`, `threshold` | `Not_Canceled`, `0.0923`, `0.67` | Distribucion de salidas |
+| `latency_ms`, `stage_ms` | `8.4`, `{"to_frame":0.7,"predict":7.5,"postprocess":0.0}` | Cuello de botella por etapa |
+| `status` | `success` / `error` | Tasa de error desde los logs |
+
+Eventos: `prediction`, `prediction_features` (valores del contrato, entrada del
+job de drift), `model_loaded`, `input_invalid` (WARNING por campo),
+`prediction_failed`, `model_load_failed` (CRITICAL), `unhandled_error`.
+
+**Niveles:** `LOG_LEVEL` (default `INFO`). Un 422 es `WARNING`; un fallo de
+carga del artefacto es `CRITICAL` y deja `/ready` en 503.
+
+**Metricas** (`/metrics`): `ml_requests_total`, `ml_request_latency_seconds`,
+`ml_stage_latency_seconds`, `ml_prediction_score`, `ml_predictions_total`,
+`ml_input_invalid_total`, `ml_model_loaded`. Los labels son de baja
+cardinalidad (version, status, stage, label, field): el `request_id` y el
+`features_hash` van al log, nunca a una metrica.
+
+**Sin secretos ni PII:** ni la `API_KEY` futura, ni cabeceras crudas, ni el
+payload completo. Este dataset no contiene PII, por eso las features se
+registran por valor en `prediction_features`.
+
+**Retencion:** 30 dias de eventos `prediction` en la plataforma de logs.
+Los reportes de drift que justifican una decision se citan en el CHANGELOG.
+
+**Costo:** la instrumentacion agrega p99 **+0.64 ms** al pipeline (~8 ms),
+medido en aislamiento con 500 iteraciones. Presupuesto del proyecto: 5 ms.
+
+## Monitoreo del modelo
+
+Un modelo puede degradarse sin dejar de responder 200. El monitoreo compara
+la produccion contra `models/baseline.json`, que se congela en cada
+entrenamiento con los **bins de la ventana de validacion** (si se recalcularan
+en produccion, el PSI mediria ruido).
+
+```bash
+uv run python -m src.monitoring.drift --actual <ventana.csv> [--minimo 500]
+```
+
+- **PSI** por feature (principal) + **KS / Jensen-Shannon** (complemento).
+  Umbrales: `< 0.1` estable, `0.1-0.2` vigilar, `> 0.2` drift.
+- **Calidad de entrada antes que drift:** nulos al alza (> 5 pp), feature
+  constante (> 99%), fuera del rango historico, categoria nueva creciendo.
+- **Ventana minima 500 filas**: por debajo el reporte dice `insuficiente`,
+  nunca un numero.
+- Salidas: `reports/drift/<fecha>.json` y `.md` (no se versionan), un evento
+  `drift_report` para metricas derivadas de logs, y **exit 1** si hay drift.
+- **Prioriza por importancia:** la metadata del modelo trae
+  `feature_importance` (permutation importance). En este dataset manda
+  `lead_time` (~26%), seguido de `no_of_special_requests` (~14%) y
+  `avg_price_per_room` (~11%). Drift en una feature con importancia 0 es un
+  dato, no una alerta.
+- El drift corre **en batch**, nunca dentro de `/predict`.
+
+**Frecuencia propuesta:** diaria sobre la ventana de 24 h.
+
+**Politica de reentrenamiento:** una alerta de drift **no reentrena sola**.
+Abre ticket o dispara un reentrenamiento aprobado que pasa por contrato,
+evaluacion y nuevo `baseline.json` antes de reemplazar el modelo vigente.
+
+**Hallazgo del propio monitoreo:** una ventana del periodo de test ya marca
+drift contra el baseline de validacion. Es exactamente la deriva temporal que
+documenta el EDA (2,37% en dic-2017 a 46,55% en ago-2018): el job la detecta
+en vez de esconderla.
+
+Alertas y runbook: `monitoring/alert_rules.yml` y `monitoring/RUNBOOK.md`.
+Panel operativo: `monitoring/dashboard.json` (5 secciones que son 5 preguntas:
+esta vivo, es rapido, falla, como se distribuyen las predicciones, hay drift).
+
 ## Estructura
 
 ```
@@ -90,8 +179,12 @@ src/
   train.py     orquestacion end-to-end
   api.py       FastAPI
   client.py    cliente de demostracion
-reports/eda.md   hallazgos y decisiones (se versiona)
-models/          artefacto entrenado (NO se versiona)
+  observability.py  logging JSON, request_id y metricas Prometheus
+  monitoring/drift.py  job de drift (PSI/KS) contra el baseline
+reports/eda.md       hallazgos y decisiones (se versiona)
+reports/drift/       reportes del job de drift (no se versionan)
+models/              pipeline.joblib + metadata.json + baseline.json (NO se versionan)
+monitoring/          alert_rules.yml, RUNBOOK.md, dashboard.json
 ```
 
 ## Datos y columnas

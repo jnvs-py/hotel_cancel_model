@@ -1,5 +1,50 @@
 # CHANGELOG
 
+## [0.3.0] - 2026-10-17
+
+Observabilidad y monitoreo del modelo (Fase 9 del agente, ejecutada paso a paso
+segun `docs/PLAN_OBSERVABILIDAD.md`).
+
+### Agregado
+
+- `src/observability.py`: logging JSON a stdout, `request_id` correlacionable,
+  hash canonico de features (sha256, nunca `hash()`) y las 7 metricas RED + ML.
+- API instrumentada: `X-Request-ID` en el header de toda respuesta,
+  `configure_logging` en el lifespan, niveles con significado (422 `WARNING`,
+  fallo de carga `CRITICAL`) y los eventos `prediction`, `prediction_features`,
+  `input_invalid`, `prediction_failed`, `model_load_failed`, `unhandled_error`.
+- `GET /metrics` en formato Prometheus, con labels de baja cardinalidad.
+- `models/baseline.json`: perfiles por feature, bins congelados en validacion,
+  histograma de probabilidades y la metrica de validacion, junto a
+  `model_version` y `dataset_hash`.
+- `feature_importance` (permutation importance) en `metadata.json`: el job de
+  drift vigila primero lo que al modelo le importa.
+- `src/monitoring/drift.py`: job por lotes con PSI (principal), KS /
+  Jensen-Shannon (complemento), chequeos de calidad de entrada, orden por
+  importancia, reporte `.json` + `.md` y exit code 1 con drift. Ventana corta
+  reporta `insuficiente`.
+- `monitoring/`: 6 alertas con `for:` y runbook por alerta, dashboard operativo
+  (5 secciones que son 5 preguntas) y la verificacion post-despliegue (canary).
+- README: secciones **Observabilidad** y **Monitoreo del modelo**.
+- 31 tests nuevos (observabilidad 17, drift 13, baseline 4): 110 en total.
+
+### Errores encontrados
+
+| Error | Causa | Solucion |
+|---|---|---|
+| Dos eventos con el mismo nombre `prediction_failed` por cada 500 | El handler interno del pipeline y la red de seguridad global registraban el mismo evento | El global pasa a `unhandled_error`: sin doble conteo en las metricas derivadas de logs. Lo cazo el test de AC-002 |
+| Dos corridas del job de drift en el mismo segundo se sobreescribian | El sello del reporte tenia precision de segundo | Sello con microsegundos (`%Y%m%dT%H%M%S%fZ`). Lo cazo el test del CLI |
+| AC-012 parecia incumplir (13,3 ms de overhead) | La medicion incluia el stack HTTP del `TestClient`, no la instrumentacion | Medicion aislada (pipeline vs pipeline + instrumentacion): **+0,64 ms p99**, dentro del presupuesto de 5 ms |
+| `capfd`/`capsys` no capturaban los eventos JSON en los tests | `configure_logging()` reemplaza los handlers del root y el `StreamHandler` queda atado al stream del arranque | El test instala su propio handler despues del lifespan y formatea con la misma clase: se prueba el esquema real |
+| Una ventana del periodo de test marcaba drift en la verificacion | No es un bug: es la deriva temporal que el EDA documento | Se verifica con una ventana del mismo regimen (validacion) y el hallazgo se documenta en README y RUNBOOK |
+
+### Mutaciones del plan (protocolo de mutacion, ver Revision Log del plan)
+
+| Mutacion | Razon |
+|---|---|
+| `feature_importance` en `metadata.json` (extension del Contrato C) | La skill `u_monitoreo_drift` exige priorizar el drift por importancia del modelo; sin esto habria que mantener el ranking a mano |
+| Fixtures de drift generados en el test en vez de CSVs versionados | Evita ~150 KB de datos en el repo y mantiene los tests deterministicos desde la distribucion sintetica |
+
 ## [0.2.0] - 2026-09-07
 
 ### Agregado
