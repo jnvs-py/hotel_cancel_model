@@ -91,6 +91,9 @@ def main():
         MODELS_DIR,
         umbral,
         len(Xr),
+        # El baseline se congela con la ventana de VALIDACION: es la referencia
+        # contra la que el job de drift compara la produccion.
+        validation=(Xva, pipeline.predict_proba(Xva)[:, 1]),
     )
     print(f"\nArtefacto guardado en {MODELS_DIR}")
     print(f"  version {metadata['model_version']}, sklearn {metadata['sklearn_version']}")
