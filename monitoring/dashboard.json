@@ -1,0 +1,253 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "title": "Hotel cancel — servicio de prediccion",
+  "description": "Panel operativo. Un bloque por pregunta del operador: esta vivo, es rapido, falla, como se distribuyen las predicciones, hay drift. Solo usa las metricas del Contrato B (src/observability.py) y ml_feature_psi del job de drift.",
+  "tags": ["ml", "hito1", "hotel-cancel"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "label": "Datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {}
+      },
+      {
+        "name": "model_version",
+        "label": "Version del modelo",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "query": { "query": "label_values(ml_requests_total, model_version)", "refId": "A" },
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 100,
+      "type": "row",
+      "title": "Esta vivo?",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false
+    },
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Modelo cargado",
+      "description": "ml_model_loaded: 1 si el artefacto esta en memoria. En 0, /ready responde 503.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 5, "w": 5, "x": 0, "y": 1 },
+      "targets": [{ "refId": "A", "expr": "max(ml_model_loaded{model_version=~\"$model_version\"})" }],
+      "options": { "graphMode": "none", "colorMode": "background" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] },
+          "mappings": [ { "type": "value", "options": { "0": { "text": "NO CARGADO", "color": "red" }, "1": { "text": "cargado", "color": "green" } } } ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Predicciones por segundo",
+      "description": "RPS de /predict. Los probes y el scrape no se cuentan.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 5, "w": 5, "x": 5, "y": 1 },
+      "targets": [{ "refId": "A", "expr": "sum(rate(ml_requests_total{model_version=~\"$model_version\"}[5m]))" }],
+      "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 2 }, "overrides": [] }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Tasa de error",
+      "description": "500 sobre el total. Alerta por encima del 2% durante 5 min.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 5, "w": 5, "x": 10, "y": 1 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(ml_requests_total{status=\"error\",model_version=~\"$model_version\"}[5m])) / clamp_min(sum(rate(ml_requests_total{model_version=~\"$model_version\"}[5m])), 1e-9)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 2,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 0.01 }, { "color": "red", "value": 0.02 } ] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Peticiones por estado",
+      "description": "success vs error, para ver cuando empezo la falla.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 5, "w": 9, "x": 15, "y": 1 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (status) (rate(ml_requests_total{model_version=~\"$model_version\"}[5m]))", "legendFormat": "{{status}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 15 } }, "overrides": [] }
+    },
+    {
+      "id": 200,
+      "type": "row",
+      "title": "Es rapido?",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
+      "collapsed": false
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Latencia de /predict (p50/p90/p99)",
+      "description": "SLO inicial: p99 < 1s. Referencia medida: pipeline ~8ms sobre el dataset real.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 7 },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.50, sum by (le) (rate(ml_request_latency_seconds_bucket{model_version=~\"$model_version\"}[5m])))", "legendFormat": "p50" },
+        { "refId": "B", "expr": "histogram_quantile(0.90, sum by (le) (rate(ml_request_latency_seconds_bucket{model_version=~\"$model_version\"}[5m])))", "legendFormat": "p90" },
+        { "refId": "C", "expr": "histogram_quantile(0.99, sum by (le) (rate(ml_request_latency_seconds_bucket{model_version=~\"$model_version\"}[5m])))", "legendFormat": "p99" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 0 }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1.0 } ] } },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Latencia por etapa",
+      "description": "Que etapa es la lenta: to_frame, predict o postprocess.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 7 },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.99, sum by (le, stage) (rate(ml_stage_latency_seconds_bucket[5m])))", "legendFormat": "{{stage}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 0 } }, "overrides": [] }
+    },
+    {
+      "id": 300,
+      "type": "row",
+      "title": "Falla?",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "collapsed": false
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Inputs invalidos (422) por campo",
+      "description": "Que campo del contrato se rompe mas: casi siempre un cambio del cliente.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 15 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (field) (rate(ml_input_invalid_total[10m]))", "legendFormat": "{{field}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "bars", "fillOpacity": 40, "stacking": { "mode": "normal" } } }, "overrides": [] }
+    },
+    {
+      "id": 400,
+      "type": "row",
+      "title": "Como se distribuyen las predicciones?",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 },
+      "collapsed": false
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Proporcion de clases predichas",
+      "description": "Baseline de positivo en validacion: 0,4617. Alerta si se aleja 10 puntos.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 23 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (label) (rate(ml_predictions_total{model_version=~\"$model_version\"}[1h]))", "legendFormat": "{{label}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 20, "stacking": { "mode": "normal" } } }, "overrides": [] }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Distribucion del score (p10/p50/p90)",
+      "description": "Un cambio brusco en la distribucion de probabilidades es la primera senal de drift.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 23 },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.10, sum by (le) (rate(ml_prediction_score_bucket{model_version=~\"$model_version\"}[1h])))", "legendFormat": "p10" },
+        { "refId": "B", "expr": "histogram_quantile(0.50, sum by (le) (rate(ml_prediction_score_bucket{model_version=~\"$model_version\"}[1h])))", "legendFormat": "p50" },
+        { "refId": "C", "expr": "histogram_quantile(0.90, sum by (le) (rate(ml_prediction_score_bucket{model_version=~\"$model_version\"}[1h])))", "legendFormat": "p90" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "none", "min": 0, "max": 1, "custom": { "drawStyle": "line", "fillOpacity": 0 } }, "overrides": [] }
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Umbral de decision",
+      "description": "Probabilidad de referencia del modelo servido (GET /model-info). Se vigila junto al score.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 23 },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.50, sum by (le) (rate(ml_prediction_score_bucket{model_version=~\"$model_version\"}[1h])))" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "none", "decimals": 4, "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null }, { "color": "red", "value": 0.67 } ] } },
+        "overrides": []
+      }
+    },
+    {
+      "id": 500,
+      "type": "row",
+      "title": "Hay drift?",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 30 },
+      "collapsed": false
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "PSI por feature (job de drift)",
+      "description": "Publicado por `python -m src.monitoring.drift`. Linea roja en 0.2 = drift significativo. Mira primero las features con importancia alta.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 16, "x": 0, "y": 31 },
+      "targets": [
+        { "refId": "A", "expr": "ml_feature_psi", "legendFormat": "{{feature}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": { "drawStyle": "line", "fillOpacity": 0 },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 0.1 }, { "color": "red", "value": 0.2 } ] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "PSI de la prediccion",
+      "description": "Deriva de la distribucion de probabilidades: la senal mas barata.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 31 },
+      "targets": [ { "refId": "A", "expr": "ml_prediction_psi" } ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": { "drawStyle": "line", "fillOpacity": 0 },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 0.1 }, { "color": "red", "value": 0.2 } ] }
+        },
+        "overrides": []
+      }
+    }
+  ]
+}
