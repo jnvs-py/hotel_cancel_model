@@ -15,11 +15,18 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from prometheus_client import make_asgi_app
 from pydantic import BaseModel, Field, model_validator
 
 from src.config import CATEGORICAL_LEVELS, MODELS_DIR, NUMERIC_RANGES
 from src.model import load_model, model_version
 from src.observability import (
+    INVALID_INPUT,
+    LATENCY,
+    MODEL_LOADED,
+    PREDICTIONS,
+    REQUESTS,
+    SCORE,
     configure_logging,
     features_hash,
     new_request_id,
@@ -56,14 +63,14 @@ async def lifespan(app):
     configure_logging()
     try:
         ml["pipeline"], ml["metadata"] = load_model(MODELS_DIR)
-        logger.info(
-            "model_loaded",
-            extra={"model_version": ml["metadata"].get("model_version")},
-        )
+        version = ml["metadata"].get("model_version") or model_version()
+        MODEL_LOADED.labels(model_version=version).set(1)
+        logger.info("model_loaded", extra={"model_version": version})
     except (FileNotFoundError, ValueError) as exc:
         # La app arranca igual y /ready responde 503. Un contenedor que muere
         # al arrancar no deja leer el log del error en la nube.
         ml["error"] = str(exc)
+        MODEL_LOADED.labels(model_version=model_version()).set(0)
         logger.critical("model_load_failed", extra={"error": str(exc)})
     yield
     ml.clear()
@@ -75,6 +82,10 @@ app = FastAPI(
     summary="Predice si una reserva de hotel sera cancelada",
     lifespan=lifespan,
 )
+
+# /metrics en formato Prometheus. El scrape no entra al log de trafico:
+# /health, /ready y /metrics no se cuentan como predicciones (AC-006).
+app.mount("/metrics", make_asgi_app())
 
 
 @app.middleware("http")
@@ -203,6 +214,8 @@ async def _errores_no_previstos(request: Request, exc: Exception):
 async def _errores_de_contrato(request: Request, exc: RequestValidationError):
     """422 del contrato: se registra que campo se rompio, con nivel WARNING."""
     campos = sorted({str(error["loc"][-1]) for error in exc.errors()})
+    for campo in campos:
+        INVALID_INPUT.labels(field=campo).inc()
     logger.warning("input_invalid", extra={"path": request.url.path, "fields": campos})
     # Mismo formato que el default de FastAPI: no rompe a los consumidores.
     return JSONResponse(status_code=422, content={"detail": jsonable_encoder(exc.errors())})
@@ -255,6 +268,7 @@ def predict(peticion: PredictRequest):
             umbral = float(ml["metadata"].get("threshold", 0.5))
             etiqueta = "Canceled" if probabilidad >= umbral else "Not_Canceled"
     except Exception:
+        REQUESTS.labels(model_version=version, status="error").inc()
         logger.error(
             "prediction_failed",
             exc_info=True,
@@ -263,6 +277,10 @@ def predict(peticion: PredictRequest):
         raise
 
     latencia_ms = round((time.perf_counter() - inicio) * 1000, 3)
+    REQUESTS.labels(model_version=version, status="success").inc()
+    LATENCY.labels(model_version=version).observe(latencia_ms / 1000)
+    SCORE.labels(model_version=version).observe(probabilidad)
+    PREDICTIONS.labels(model_version=version, label=etiqueta).inc()
     logger.info(
         "prediction",
         extra={

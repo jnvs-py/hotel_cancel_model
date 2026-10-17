@@ -279,3 +279,61 @@ def test_los_probes_no_generan_eventos_de_prediccion(cliente_con_logs):
     assert cliente.get("/health").status_code == 200
     assert cliente.get("/ready").status_code == 200
     assert _eventos(registros, "prediction") == []
+
+
+# ---------------------------------------------------------------------------
+# Metricas (AC-005, AC-006, AC-012)
+# ---------------------------------------------------------------------------
+
+
+def _valor_contador(texto: str, nombre: str) -> float:
+    """Suma las series de un contador Prometheus (una linea por etiqueta)."""
+    total = 0.0
+    for linea in texto.splitlines():
+        if linea.startswith(nombre + "{") or linea.startswith(nombre + " "):
+            total += float(linea.rsplit(" ", 1)[1])
+    return total
+
+
+def test_metrics_expone_las_metricas_del_contrato(cliente_con_logs):
+    """AC-005: /metrics expone las 7 metricas, con labels de baja cardinalidad."""
+    cliente, _ = cliente_con_logs
+    cliente.post("/predict", json=EJEMPLO, headers={"X-Request-ID": "rid-metricas"})
+
+    texto = cliente.get("/metrics").text
+    for metrica in (
+        "ml_requests_total",
+        "ml_request_latency_seconds",
+        "ml_stage_latency_seconds",
+        "ml_prediction_score",
+        "ml_predictions_total",
+        "ml_model_loaded",
+    ):
+        assert metrica in texto, f"falta {metrica} en /metrics"
+    # El request_id NUNCA es label: seria alta cardinalidad.
+    assert "rid-metricas" not in texto
+
+
+def test_metrics_cuenta_las_predicciones_y_los_422(cliente_con_logs):
+    cliente, _ = cliente_con_logs
+    antes = _valor_contador(cliente.get("/metrics").text, "ml_requests_total")
+
+    cliente.post("/predict", json=EJEMPLO)
+    cliente.post("/predict", json={**EJEMPLO, "lead_time": 99999})
+
+    texto = cliente.get("/metrics").text
+    assert _valor_contador(texto, "ml_requests_total") == antes + 1
+    assert 'ml_input_invalid_total{field="lead_time"}' in texto
+
+
+def test_los_probes_y_el_scrape_no_se_cuentan_como_prediccion(cliente_con_logs):
+    """AC-006: /health, /ready y /metrics no contaminan la senal."""
+    cliente, registros = cliente_con_logs
+    antes = _valor_contador(cliente.get("/metrics").text, "ml_requests_total")
+
+    cliente.get("/health")
+    cliente.get("/ready")
+    cliente.get("/metrics")
+
+    assert _valor_contador(cliente.get("/metrics").text, "ml_requests_total") == antes
+    assert _eventos(registros, "prediction") == []
