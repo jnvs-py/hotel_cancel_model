@@ -12,6 +12,7 @@ la tabla de rollback por paso en la seccion de riesgo.
 |---|---|---|---|
 | 1 | 2026-09-12 | Informe de observabilidad | Diagnostico y plan por etapas |
 | 2 | 2026-09-12 | Reescritura como plan SDD + subagent-driven | Pedido del usuario: spec primero, pasos cold-executable, revision adversarial |
+| 3 | 2026-10-17 | Implementacion S1-S9 + revision adversarial + mutaciones registradas | Ejecucion del plan; el revisor independiente encontro 1 critico y 4 importantes |
 
 ## Como leer este plan
 
@@ -160,8 +161,14 @@ features del contrato, para el job de drift), `model_loaded` (arranque),
 | `ml_input_invalid_total` | Counter | `field` | Campo que mas se rompe (422) |
 | `ml_model_loaded` | Gauge | `model_version` | 1/0 |
 
-Buckets: `0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1`.
-Prohibido como label: `request_id`, `features_hash`, valores de features.
+Buckets: `0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5` (mutacion M5: el
+bucket final por encima del SLO es obligatorio, sin el `histogram_quantile` se
+satura en 1.0 y la alerta `LatenciaP99Alta` nunca dispararia).
+Prohibido como label: `request_id`, `features_hash`, valores de features **y
+cualquier cadena elegida por el cliente**: el label `field` sale de una
+whitelist de los campos del contrato, con `"extra"` para todo lo demas
+(hallazgo critico de la revision: `extra="forbid"` deja que el cliente elija el
+nombre del campo).
 
 ### Contrato C — Baseline (`models/baseline.json`)
 
@@ -719,6 +726,36 @@ Cualquier cambio de alcance se registra en el Revision Log con su razon.
 6. CHANGELOG con la tabla de errores encontrados durante la implementacion.
 
 ---
+
+# 7. Registro de ejecucion (estado real al 2026-10-17)
+
+| Paso | Estado | Commit | Evidencia |
+|---|---|---|---|
+| S1 Fundacion de observabilidad | completado | `5f1f407` | 9 tests unitarios, `features_hash` canonico verificado |
+| S2 API instrumentada | completado | `176cef3` | AC-001, AC-002, AC-003 en verde |
+| S3 `/metrics` | completado | `8a34c4b` | AC-005, AC-006; AC-012 medido (+0.6 ms p99) |
+| S4 Baseline en entrenamiento | completado | `b72338c` | AC-007; baseline de 379 KB con 16 features y 10 bins |
+| S5 Job de drift | completado | `cd15016` | AC-008 con datos reales: mismo regimen `ok`/0, `lead_time`+120 `drift`/1 |
+| S6 Alertas + runbook | completado | `8cecb4f` | AC-009: 6 alertas con `for:` y runbook por alerta |
+| S7 Dashboard | completado | `9db3388` | 17 paneles en 5 secciones, solo metricas del Contrato B |
+| S8 README + CHANGELOG | completado | `40c5e61` | AC-010 |
+| S9 Gates de CI + drift programado | completado | `0cf8db8` | gate de `/metrics`, evento `prediction` y prediccion de referencia (AC-011) |
+| S10 Verificacion post-despliegue | **diferido** | - | Depende de la Fase 8 (nube). La seccion de canary ya esta en `monitoring/RUNBOOK.md` |
+
+**Revision adversarial (seccion 4):** ejecutada por un subagente independiente
+sobre el diff `b293de1..0cf8db8`. Resultado: 1 critico y 4 importantes, todos
+corregidos antes de cerrar. Detalle en el CHANGELOG (0.3.0).
+
+# 8. Mutaciones aplicadas
+
+| # | Mutacion | Razon |
+|---|---|---|
+| M1 | `feature_importance` en `metadata.json` (extension del Contrato C) | La skill `u_monitoreo_drift` exige priorizar el drift por importancia del modelo |
+| M2 | Fixtures de drift generados en runtime en los tests, no CSVs versionados | Evita ~150 KB en el repo y mantiene los tests deterministicos |
+| M3 | `None` en `bin_edges` para los extremos abiertos (ajuste del Contrato C) | `-Infinity` no es JSON valido (RFC 8259) y rompe a cualquier consumidor no-Python |
+| M4 | Publicacion opcional en Pushgateway (`--pushgateway` / `PUSHGATEWAY_URL`) | Cierra la brecha del Contrato D: la alerta `DriftDeEntrada` necesita un productor real de `ml_feature_psi` |
+| M5 | Bucket final `2.5` en `ml_request_latency_seconds` | Sin un bucket por encima del SLO, `histogram_quantile` se satura en 1.0 y la alerta de latencia no dispara |
+| M6 | La deriva de la distribucion de predicciones cuenta para el `status` y el exit code | Es la senal mas barata y el Contrato D la declaraba como metrica publicable |
 
 # Anexo A — Skills aplicables (revision pedida)
 

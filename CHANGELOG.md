@@ -29,6 +29,21 @@ segun `docs/PLAN_OBSERVABILIDAD.md`).
 - 37 tests nuevos (observabilidad 20, drift 13, baseline 4): **99 casos en
   total** (93 funciones, algunos parametrizados), 92% de cobertura.
 
+### Revisión adversarial (subagente independiente, diff `b293de1..0cf8db8`)
+
+| Hallazgo | Severidad | Corrección |
+|---|---|---|
+| Cardinalidad ilimitada en el label `field` de `ml_input_invalid_total`: con `extra="forbid"` el cliente elige el nombre del campo y cada nombre inventado creaba una serie nueva en Prometheus (memoria sin techo desde input no confiable, sin auth) | **crítica** | Whitelist de los 16 campos del contrato; lo demás cae en `field="extra"`. Test que lo fija |
+| `/metrics` respondía 307 hacia `/metrics/`: el gate de CI (`curl` sin `-L`) quedaba en rojo y los scrapers tenían que seguir el redirect | importante | Ruta directa con `generate_latest()` en vez de montar un subapp; test que exige 200 sin redirect |
+| `models/baseline.json` no era JSON válido (RFC 8259): `-Infinity` en los bins abiertos, rechazado por cualquier consumidor que no sea Python | importante | Extremos abiertos como `null`, reconstruidos en el job; test con `parse_constant` estricto |
+| La alerta `DriftDeEntrada` apuntaba a `ml_feature_psi`, que no tenía productor: nunca podía disparar | importante | Publicación opcional en Pushgateway (`--pushgateway` / `PUSHGATEWAY_URL`) y comentario explícito de las dos vías (gauge o métricas derivadas de logs) |
+| El README prometía no registrar el payload, pero `prediction_features` registra los 16 campos por valor | importante | README alineado con el comportamiento, `PII_FIELDS` documentado como interruptor y decisión de retención explícita |
+| Al arreglar los bins, los dos extremos `null` se reconstruían como `-inf` (histograma no monótono) | bug propio | Se distingue primero de último; los tests de drift existentes lo cazaron |
+| El PSI de la distribución de predicciones no afectaba al estado ni al exit code | menor | Ahora cuenta como señal de drift (era el Contrato D) |
+| `print()` para el evento `drift_report`, contra el catálogo de anti-patrones | menor | Emitido por el logger con el formatter JSON del servicio |
+| AC-011 y AC-012 sin evidencia reproducible | menor | Gate en CI que asevera la predicción de referencia (0.0923 / umbral 0.67) y `scripts/medir_overhead.py`, que falla si el overhead p99 pasa de 5 ms |
+| `scipy` en el grupo `monitoring` es redundante (llega como transitiva de scikit-learn) | menor | Se conserva explícito (el job no depende de un accidente transitivo) con el comentario corregido |
+
 ### Errores encontrados
 
 | Error | Causa | Solucion |

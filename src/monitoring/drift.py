@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -23,6 +24,8 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 from scipy.spatial.distance import jensenshannon
+
+from src.observability import configure_logging, logger
 
 EPS = 1e-4
 MIN_ROWS = 500
@@ -64,7 +67,12 @@ def compare_numeric(perfil: dict, serie: pd.Series) -> dict:
     limpio = serie.dropna().astype(float)
     if not limpio.size:
         return {"status": "sin_datos"}
-    conteos, _ = np.histogram(limpio, bins=np.array(perfil["bin_edges"]))
+    # Los extremos abiertos viajan como null (JSON valido): se reconstruyen aqui.
+    crudos = perfil["bin_edges"]
+    bordes = np.array(
+        [(-np.inf if i == 0 else np.inf) if b is None else float(b) for i, b in enumerate(crudos)]
+    )
+    conteos, _ = np.histogram(limpio, bins=bordes)
     actual = conteos / max(conteos.sum(), 1)
     valor = psi(perfil["bin_props"], actual)
     cuantiles = perfil["quantiles"]
@@ -160,7 +168,15 @@ def drift_report(
         "features": caracteristicas,
     }
     if "probability" in actual.columns:
-        reporte["prediction"] = compare_numeric(baseline["prediction"], actual["probability"])
+        prediccion = compare_numeric(baseline["prediction"], actual["probability"])
+        reporte["prediction"] = prediccion
+        # La deriva de la distribucion de PREDICCIONES es la senal mas barata:
+        # cuenta para el estado general y para el exit code.
+        if prediccion.get("status") == "drift" and reporte["status"] != "drift":
+            reporte["status"] = "drift"
+            reporte["features_en_drift"] = [*en_drift, "prediction"]
+        elif prediccion.get("status") == "vigilar" and reporte["status"] == "ok":
+            reporte["status"] = "vigilar"
     return reporte
 
 
@@ -213,6 +229,34 @@ def _escribir_markdown(reporte: dict, destino: Path) -> None:
     destino.write_text("\n".join(lineas) + "\n", encoding="utf-8")
 
 
+def _publicar_en_pushgateway(reporte: dict, url: str) -> None:
+    """Publica ml_feature_psi y ml_prediction_psi si hay Pushgateway.
+
+    Sin Pushgateway (lo normal: la plataforma no hace scrape) la senal viaja
+    en el evento `drift_report` y las metricas se derivan de los logs.
+    """
+    from prometheus_client import CollectorRegistry, Gauge, push_to_gateway
+
+    registro = CollectorRegistry()
+    por_feature = Gauge(
+        "ml_feature_psi", "PSI por feature vs baseline", ["feature"], registry=registro
+    )
+    for columna, resultado in reporte.get("features", {}).items():
+        if resultado.get("psi") is not None:
+            por_feature.labels(feature=columna).set(float(resultado["psi"]))
+    de_prediccion = Gauge(
+        "ml_prediction_psi", "PSI de la distribucion de predicciones", registry=registro
+    )
+    psi_prediccion = reporte.get("prediction", {}).get("psi")
+    if psi_prediccion is not None:
+        de_prediccion.set(float(psi_prediccion))
+    try:
+        push_to_gateway(url, job="hito1-drift", registry=registro)
+        print(f"Metricas publicadas en {url}")
+    except Exception as exc:
+        print(f"No se pudo publicar en el Pushgateway ({exc}): la senal queda en el evento JSON")
+
+
 def _leer(ruta: Path) -> pd.DataFrame:
     if ruta.suffix == ".parquet":
         return pd.read_parquet(ruta)
@@ -230,7 +274,13 @@ def main(argv=None) -> int:
     parser.add_argument("--metadata", type=Path, default=MODELS_DIR / "metadata.json")
     parser.add_argument("--minimo", type=int, default=MIN_ROWS)
     parser.add_argument("--salida", type=Path, default=REPORTS_DIR / "drift")
+    parser.add_argument(
+        "--pushgateway",
+        default=os.environ.get("PUSHGATEWAY_URL"),
+        help="URL del Pushgateway para publicar ml_feature_psi (opcional)",
+    )
     args = parser.parse_args(argv)
+    configure_logging()
 
     if not args.baseline.exists():
         print(f"No existe {args.baseline}. Entrena primero: genera el baseline junto al artefacto.")
@@ -251,21 +301,24 @@ def main(argv=None) -> int:
     (args.salida / f"{sello}.json").write_text(json.dumps(reporte, indent=2), encoding="utf-8")
     _escribir_markdown(reporte, args.salida / f"{sello}.md")
 
-    # Evento para metricas derivadas de logs / alerta DriftDeEntrada.
-    print(
-        json.dumps(
-            {
-                "event": "drift_report",
-                "model_version": reporte.get("model_version"),
-                "status": reporte["status"],
-                "feature_psi": {
-                    columna: resultado.get("psi")
-                    for columna, resultado in reporte.get("features", {}).items()
-                },
-                "prioritarias_en_drift": reporte.get("features_en_drift_prioritarias", []),
-            }
-        )
+    # Evento en el MISMO formato JSON del servicio: es la entrada de las
+    # metricas derivadas de logs y de la alerta DriftDeEntrada.
+    logger.info(
+        "drift_report",
+        extra={
+            "model_version": reporte.get("model_version"),
+            "status": reporte["status"],
+            "feature_psi": {
+                columna: resultado.get("psi")
+                for columna, resultado in reporte.get("features", {}).items()
+            },
+            "prioritarias_en_drift": reporte.get("features_en_drift_prioritarias", []),
+        },
     )
+
+    if args.pushgateway:
+        _publicar_en_pushgateway(reporte, args.pushgateway)
+
     print(f"Estado general: {reporte['status']} -> {args.salida}/{sello}.json")
     return 1 if reporte["status"] == "drift" else 0
 

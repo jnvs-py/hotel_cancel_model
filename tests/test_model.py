@@ -2,6 +2,7 @@
 
 import json
 
+import pandas as pd
 import pytest
 import sklearn
 
@@ -136,8 +137,10 @@ def test_baseline_congela_bins_y_perfiles(tmp_path, datos_sinteticos):
     numerica = baseline["features"]["lead_time"]
     assert numerica["kind"] == "numeric"
     assert len(numerica["bin_edges"]) == len(numerica["bin_props"]) + 1
-    assert numerica["bin_edges"][0] == float("-inf")
-    assert numerica["bin_edges"][-1] == float("inf")
+    # Extremos abiertos como null: -Infinity no es JSON valido (RFC 8259) y
+    # revienta a cualquier consumidor que no sea Python.
+    assert numerica["bin_edges"][0] is None
+    assert numerica["bin_edges"][-1] is None
     assert abs(sum(numerica["bin_props"]) - 1.0) < 1e-6
     assert set(numerica["quantiles"]) == {"p01", "p10", "p50", "p90", "p99"}
 
@@ -160,3 +163,20 @@ def test_load_model_no_necesita_el_baseline(tmp_path, datos_sinteticos):
     modelo_entrenado = _entrenar_y_guardar(tmp_path, datos_sinteticos, con_validacion=False)
     pipeline, metadata = load_model(modelo_entrenado)
     assert pipeline is not None and metadata["model_version"]
+
+
+def test_el_baseline_es_json_valido_estricto(tmp_path, datos_sinteticos):
+    """RFC 8259: nada de Infinity/NaN (json.loads con parse_constant lo verifica)."""
+    modelo_entrenado = _entrenar_y_guardar(tmp_path, datos_sinteticos)
+    texto = (modelo_entrenado / BASELINE_NAME).read_text(encoding="utf-8")
+    assert "Infinity" not in texto and "NaN" not in texto
+    json.loads(texto, parse_constant=lambda c: (_ for _ in ()).throw(ValueError(c)))
+
+
+def test_columna_constante_no_colapsa_el_histograma():
+    """Un solo valor no puede dejar bin_edges con menos bordes que bins."""
+    from src.model import _numeric_profile
+
+    perfil = _numeric_profile(pd.Series([5.0] * 1000))
+    assert perfil["bin_edges"] == [None, None]
+    assert len(perfil["bin_edges"]) == len(perfil["bin_props"]) + 1

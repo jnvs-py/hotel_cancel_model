@@ -84,6 +84,26 @@ jobs:
 
       # Gate de observabilidad (paso S9): la instrumentacion debe viajar en la
       # imagen, no solo en el entorno de desarrollo.
+      - name: Verificar la prediccion de referencia (AC-011)
+        run: |
+          curl -sf -X POST http://localhost:8000/predict \
+            -H "Content-Type: application/json" \
+            -d @tests/fixtures/request_ejemplo.json > /tmp/respuesta.json
+          cat /tmp/respuesta.json; echo
+          python - <<'EOF'
+          import json
+
+          cuerpo = json.load(open("/tmp/respuesta.json"))
+          assert cuerpo["prediction"] == "Not_Canceled", cuerpo
+          assert abs(cuerpo["probability"] - 0.0923) < 1e-6, cuerpo
+          assert cuerpo["threshold"] == 0.67, cuerpo
+          assert set(cuerpo) == {
+              "prediction", "probability", "threshold", "model_version", "request_id"
+          }, cuerpo
+          print("Prediccion de referencia OK (AC-011)")
+          EOF
+        shell: bash
+
       - name: Verificar /metrics y el evento prediction
         run: |
           echo "== metricas =="

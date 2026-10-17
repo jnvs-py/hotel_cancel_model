@@ -337,3 +337,23 @@ def test_los_probes_y_el_scrape_no_se_cuentan_como_prediccion(cliente_con_logs):
 
     assert _valor_contador(cliente.get("/metrics").text, "ml_requests_total") == antes
     assert _eventos(registros, "prediction") == []
+
+
+def test_un_campo_inventado_no_se_vuelve_label(cliente_con_logs):
+    """HALLAZGO CRITICO de la revision: con extra=forbid el nombre del campo lo
+    elige el cliente; sin whitelist cada nombre inventado seria una serie nueva
+    en Prometheus (cardinalidad sin techo desde input no confiable)."""
+    cliente, _ = cliente_con_logs
+    cliente.post("/predict", json={**EJEMPLO, "campo_inventado_xyz": 1})
+
+    texto = cliente.get("/metrics").text
+    assert 'field="campo_inventado_xyz"' not in texto
+    assert 'field="extra"' in texto
+
+
+def test_metrics_responde_200_sin_redirect(cliente_con_logs):
+    """Montar un subapp en /metrics daba 307 a /metrics/ y rompia scrapers y CI."""
+    cliente, _ = cliente_con_logs
+    respuesta = cliente.get("/metrics", follow_redirects=False)
+    assert respuesta.status_code == 200
+    assert "ml_requests_total" in respuesta.text

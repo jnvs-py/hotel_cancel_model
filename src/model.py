@@ -74,8 +74,15 @@ def _numeric_profile(serie, n_bins=10):
     """
     limpio = serie.dropna().astype(float)
     bordes = np.unique(np.quantile(limpio, np.linspace(0, 1, n_bins + 1)))
-    bordes[0], bordes[-1] = -np.inf, np.inf
-    conteos, _ = np.histogram(limpio, bins=bordes)
+    if bordes.size < 2:
+        # Columna constante: un solo bin abierto, sin colapsar el histograma.
+        conteos = np.array([limpio.size])
+        bordes_json = [None, None]
+    else:
+        conteos, _ = np.histogram(limpio, bins=np.concatenate(([-np.inf], bordes[1:-1], [np.inf])))
+        # Los extremos abiertos se guardan como null: -Infinity no es JSON valido
+        # (RFC 8259) y revienta a cualquier consumidor que no sea Python.
+        bordes_json = [None, *[float(b) for b in bordes[1:-1]], None]
     cuantiles = limpio.quantile([0.01, 0.1, 0.5, 0.9, 0.99]).tolist()
     return {
         "kind": "numeric",
@@ -86,7 +93,7 @@ def _numeric_profile(serie, n_bins=10):
         "min": float(limpio.min()),
         "max": float(limpio.max()),
         "quantiles": dict(zip(["p01", "p10", "p50", "p90", "p99"], cuantiles, strict=True)),
-        "bin_edges": [float(borde) for borde in bordes],
+        "bin_edges": bordes_json,
         "bin_props": (conteos / max(conteos.sum(), 1)).tolist(),
         # Muestra para el KS del job de drift; no es PII en este dataset.
         "sample": limpio.sample(min(2000, limpio.size), random_state=42).round(6).tolist(),

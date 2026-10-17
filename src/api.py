@@ -11,11 +11,11 @@ from contextlib import asynccontextmanager
 from typing import Literal
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from prometheus_client import make_asgi_app
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, Field, model_validator
 
 from src.config import CATEGORICAL_LEVELS, MODELS_DIR, NUMERIC_RANGES
@@ -56,6 +56,9 @@ DIAS_POR_MES = {
 
 ml = {}
 
+# Campos del contrato de entrada: la unica fuente valida para el label `field`.
+CAMPOS_DEL_CONTRATO = frozenset(NUMERIC_RANGES) | frozenset(CATEGORICAL_LEVELS)
+
 
 @asynccontextmanager
 async def lifespan(app):
@@ -83,9 +86,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# /metrics en formato Prometheus. El scrape no entra al log de trafico:
-# /health, /ready y /metrics no se cuentan como predicciones (AC-006).
-app.mount("/metrics", make_asgi_app())
+
+# /metrics en formato Prometheus, como ruta directa: montar un subapp en
+# "/metrics" redirige 307 a "/metrics/" y rompe a los scrapers y al gate de CI.
+# El scrape no se cuenta como prediccion ni se loguea (AC-006).
+@app.get("/metrics", include_in_schema=False)
+def metrics():
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.middleware("http")
@@ -212,8 +219,18 @@ async def _errores_no_previstos(request: Request, exc: Exception):
 
 @app.exception_handler(RequestValidationError)
 async def _errores_de_contrato(request: Request, exc: RequestValidationError):
-    """422 del contrato: se registra que campo se rompio, con nivel WARNING."""
-    campos = sorted({str(error["loc"][-1]) for error in exc.errors()})
+    """422 del contrato: se registra que campo se rompio, con nivel WARNING.
+
+    El label `field` sale de una WHITELIST: con extra="forbid" el cliente elige
+    el nombre del campo, y sin filtro cada nombre inventado seria una serie
+    nueva en Prometheus (cardinalidad sin techo desde input no confiable).
+    """
+    campos = sorted(
+        {
+            str(error["loc"][-1]) if str(error["loc"][-1]) in CAMPOS_DEL_CONTRATO else "extra"
+            for error in exc.errors()
+        }
+    )
     for campo in campos:
         INVALID_INPUT.labels(field=campo).inc()
     logger.warning("input_invalid", extra={"path": request.url.path, "fields": campos})

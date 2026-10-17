@@ -114,15 +114,22 @@ carga del artefacto es `CRITICAL` y deja `/ready` en 503.
 cardinalidad (version, status, stage, label, field): el `request_id` y el
 `features_hash` van al log, nunca a una metrica.
 
-**Sin secretos ni PII:** ni la `API_KEY` futura, ni cabeceras crudas, ni el
-payload completo. Este dataset no contiene PII, por eso las features se
-registran por valor en `prediction_features`.
+**Sin secretos ni PII:** nunca se registran la `API_KEY` futura, cabeceras
+crudas ni el cuerpo crudo de la peticion. El evento `prediction_features`
+registra por valor las **16 columnas del contrato** (es la entrada del job de
+drift); el dataset no contiene PII y `PII_FIELDS` en `src/observability.py` es
+el interruptor para excluir cualquier columna sensible que se agregue.
 
-**Retencion:** 30 dias de eventos `prediction` en la plataforma de logs.
-Los reportes de drift que justifican una decision se citan en el CHANGELOG.
+**Retencion:** 30 dias de eventos `prediction` en la plataforma de logs. Los
+eventos `prediction_features` (16 campos del contrato, ~300 bytes) son la
+parte mas voluminosa: si el volumen lo justifica, se muestrean o se acorta su
+retencion. Los reportes de drift que justifican una decision se citan en el
+CHANGELOG.
 
-**Costo:** la instrumentacion agrega p99 **+0.64 ms** al pipeline (~8 ms),
-medido en aislamiento con 500 iteraciones. Presupuesto del proyecto: 5 ms.
+**Costo:** reproducible con `uv run python scripts/medir_overhead.py [iteraciones]`,
+que compara el pipeline solo contra el pipeline instrumentado (sin el stack
+HTTP). Medido: p99 **+0.6 ms** sobre un pipeline de ~7-9 ms; presupuesto del
+proyecto 5 ms. El script sale con codigo 1 si se pasa del presupuesto.
 
 ## Monitoreo del modelo
 

@@ -75,8 +75,10 @@ groups:
           runbook: "RUNBOOK.md#distribuciondeprediccionescambio"
 
       - alert: DriftDeEntrada
-        # PSI publicado por el job `python -m src.monitoring.drift` (evento
-        # drift_report en los logs, o el gauge si se empuja a Prometheus).
+        # Esta expr consume los gauges ml_feature_psi del job de drift. El job
+        # los publica SOLO si se le pasa --pushgateway (o PUSHGATEWAY_URL);
+        # por defecto la senal viaja en el evento JSON `drift_report` y las
+        # metricas se derivan de los logs (la plataforma no hace scrape).
         # La alerta solo mira features prioritarias: drift en una feature con
         # importancia 0 es un dato, no una alerta.
         expr: max by (feature) (ml_feature_psi) > 0.2

@@ -188,3 +188,31 @@ def test_cli_avisa_si_no_hay_baseline(tmp_path, monkeypatch, capsys):
     _ventana(np.random.default_rng(11)).to_csv(ok_csv, index=False)
     assert main(["--actual", str(ok_csv)]) == 2
     assert "No existe" in capsys.readouterr().out
+
+
+def test_la_deriva_de_la_prediccion_cuenta_para_el_estado(baseline_sintetico):
+    """La distribucion de probabilidades es la senal mas barata: si deriva,
+    el reporte lo dice aunque ninguna feature haya derivado."""
+    ventana = _ventana(np.random.default_rng(21), n=2000)
+    ventana["probability"] = np.clip(ventana["probability"] + 0.5, 0, 1)
+
+    reporte = drift_report(baseline_sintetico, ventana)
+    assert reporte["status"] == "drift"
+    assert "prediction" in reporte["features_en_drift"]
+    assert reporte["prediction"]["status"] == "drift"
+
+
+def test_sin_pushgateway_el_job_no_falla(tmp_path, monkeypatch, baseline_sintetico, capsys):
+    """La via por defecto (sin Pushgateway) es el evento JSON, no un crash."""
+    monkeypatch.setattr(config, "MODELS_DIR", tmp_path)
+    monkeypatch.setattr(config, "REPORTS_DIR", tmp_path / "reports")
+    monkeypatch.delenv("PUSHGATEWAY_URL", raising=False)
+    (tmp_path / "baseline.json").write_text(json.dumps(baseline_sintetico), encoding="utf-8")
+    ok_csv = tmp_path / "ok.csv"
+    _ventana(np.random.default_rng(11)).to_csv(ok_csv, index=False)
+
+    assert main(["--actual", str(ok_csv)]) == 0
+    evento = json.loads(
+        [linea for linea in capsys.readouterr().out.splitlines() if "drift_report" in linea][-1]
+    )
+    assert evento["event"] == "drift_report"
