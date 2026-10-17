@@ -216,3 +216,17 @@ def test_sin_pushgateway_el_job_no_falla(tmp_path, monkeypatch, baseline_sinteti
         [linea for linea in capsys.readouterr().out.splitlines() if "drift_report" in linea][-1]
     )
     assert evento["event"] == "drift_report"
+
+
+def test_pushgateway_inaccesible_no_mata_el_job(tmp_path, monkeypatch, baseline_sintetico, capsys):
+    """Un Pushgateway caido degrada a 'la senal queda en el log', no revienta."""
+    monkeypatch.setattr(config, "MODELS_DIR", tmp_path)
+    monkeypatch.setattr(config, "REPORTS_DIR", tmp_path / "reports")
+    (tmp_path / "baseline.json").write_text(json.dumps(baseline_sintetico), encoding="utf-8")
+    ok_csv = tmp_path / "ok.csv"
+    _ventana(np.random.default_rng(11)).to_csv(ok_csv, index=False)
+
+    codigo = main(["--actual", str(ok_csv), "--pushgateway", "http://127.0.0.1:9"])
+    salida = capsys.readouterr().out
+    assert codigo == 0
+    assert "No se pudo publicar" in salida or "Metricas publicadas" in salida
