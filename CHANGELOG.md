@@ -26,7 +26,8 @@ segun `docs/PLAN_OBSERVABILIDAD.md`).
 - `monitoring/`: 6 alertas con `for:` y runbook por alerta, dashboard operativo
   (5 secciones que son 5 preguntas) y la verificacion post-despliegue (canary).
 - README: secciones **Observabilidad** y **Monitoreo del modelo**.
-- 31 tests nuevos (observabilidad 17, drift 13, baseline 4): 110 en total.
+- 37 tests nuevos (observabilidad 20, drift 13, baseline 4): **99 casos en
+  total** (93 funciones, algunos parametrizados), 92% de cobertura.
 
 ### Errores encontrados
 
