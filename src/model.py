@@ -104,6 +104,26 @@ def _categorical_profile(serie):
     }
 
 
+def _feature_importance(pipeline, X, y, muestra=1500, repeticiones=3):
+    """Importancia por permutacion sobre una muestra de validacion.
+
+    Se guarda en la metadata para que el job de drift sepa QUE features vigilar
+    primero: deriva en una feature irrelevante es un dato, no una alerta.
+    """
+    from sklearn.inspection import permutation_importance
+
+    tamano = min(muestra, len(X))
+    X_m = X.sample(n=tamano, random_state=42)
+    y_m = y.loc[X_m.index]
+    resultado = permutation_importance(
+        pipeline, X_m, y_m, n_repeats=repeticiones, random_state=42, scoring="roc_auc", n_jobs=-1
+    )
+    return {
+        columna: round(float(valor), 6)
+        for columna, valor in zip(X.columns, resultado.importances_mean, strict=True)
+    }
+
+
 def build_baseline(X_validacion, proba_validacion, version, dataset_hash, metric, threshold):
     """Congela la referencia contra la que el job de drift compara produccion."""
     caracteristicas = {}
@@ -124,7 +144,15 @@ def build_baseline(X_validacion, proba_validacion, version, dataset_hash, metric
 
 
 def save_model(
-    pipeline, metrics, data_path, model_dir, threshold, n_train, fingerprint=None, validation=None
+    pipeline,
+    metrics,
+    data_path,
+    model_dir,
+    threshold,
+    n_train,
+    fingerprint=None,
+    validation=None,
+    importance=None,
 ):
     """Guarda el artefacto, su metadata y (si hay validacion) el baseline.
 
@@ -148,6 +176,8 @@ def save_model(
     }
     if huella:
         metadata["fingerprint"] = huella
+    if importance:
+        metadata["feature_importance"] = importance
     (model_dir / METADATA_NAME).write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
     if validation is not None:

@@ -16,6 +16,8 @@ models/
 *.pkl
 # Salidas
 reports/figures/
+# Los reportes de drift se citan en el CHANGELOG cuando justifican una decision.
+reports/drift/
 salida*.csv
 predicciones*.csv
 # Notebooks y editores

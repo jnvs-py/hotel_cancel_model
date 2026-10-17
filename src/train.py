@@ -19,7 +19,7 @@ from src.config import (
 )
 from src.data import load_raw
 from src.evaluate import choose_threshold, evaluate
-from src.model import build_pipeline, save_model
+from src.model import _feature_importance, build_pipeline, save_model
 from src.schema import FEATURE_ORDER
 
 
@@ -94,6 +94,8 @@ def main():
         # El baseline se congela con la ventana de VALIDACION: es la referencia
         # contra la que el job de drift compara la produccion.
         validation=(Xva, pipeline.predict_proba(Xva)[:, 1]),
+        # Y la importancia ordena QUE features vigilar primero en el drift.
+        importance=_feature_importance(pipeline, Xva, yva),
     )
     print(f"\nArtefacto guardado en {MODELS_DIR}")
     print(f"  version {metadata['model_version']}, sklearn {metadata['sklearn_version']}")
