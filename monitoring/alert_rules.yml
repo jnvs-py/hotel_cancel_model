@@ -1,0 +1,88 @@
+# Reglas de alerta Prometheus para la API de cancelacion de reservas.
+#
+# Los umbrales son un PUNTO DE PARTIDA: se acuerdan con quien conoce el modelo
+# y el negocio, y se ajustan tras observar unas semanas de variacion normal.
+# Cada alerta apunta a su seccion de RUNBOOK.md.
+#
+# Contexto del servicio (medido el 2026-10-17):
+#   - latencia p99 del pipeline: ~8 ms; presupuesto de instrumentacion: <5 ms
+#   - tasa de clase positiva en validacion (baseline): 46,17% (models/baseline.json)
+#   - F1 honesto (split temporal): 0,621
+#   - 1 release de modelo publicado: model-0.1.0-55ca619
+
+groups:
+  - name: ml-servicio
+    rules:
+      - alert: ModeloNoCargado
+        expr: max(ml_model_loaded) == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "El modelo no esta cargado; /ready devuelve 503"
+          runbook: "RUNBOOK.md#modelonocargado"
+
+      - alert: TasaDeErrorAlta
+        expr: |
+          sum(rate(ml_requests_total{status="error"}[5m]))
+            / clamp_min(sum(rate(ml_requests_total[5m])), 1e-9) > 0.02
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Mas del 2% de las predicciones fallan (500)"
+          runbook: "RUNBOOK.md#tasadeerroralta"
+
+      - alert: LatenciaP99Alta
+        # SLO inicial: p99 < 1s. El pipeline medido tarda ~8ms, asi que 1s da
+        # margen para arranques en frio sin disparar por ruido.
+        expr: |
+          histogram_quantile(0.99, sum by (le) (rate(ml_request_latency_seconds_bucket[5m]))) > 1.0
+        for: 10m
+        labels:
+          severity: high
+        annotations:
+          summary: "p99 de /predict por encima de 1s"
+          runbook: "RUNBOOK.md#latenciap99alta"
+
+      - alert: InputsInvalidos
+        # Un cliente cambio algo en su lado: mas del 10% de los inputs rompe
+        # el contrato estricto. Los 422 se cuentan por campo.
+        expr: |
+          sum(rate(ml_input_invalid_total[15m]))
+            / clamp_min(sum(rate(ml_requests_total[15m])), 1e-9) > 0.10
+        for: 15m
+        labels:
+          severity: medium
+        annotations:
+          summary: "Mas del 10% de los inputs violan el contrato (422)"
+          runbook: "RUNBOOK.md#inputsinvalidos"
+
+      - alert: DistribucionDePrediccionesCambio
+        # Baseline: positive_rate = 0.4617 (models/baseline.json). Tolerancia
+        # de 10 puntos porcentuales, acordada como punto de partida.
+        expr: |
+          abs(
+            sum(rate(ml_predictions_total{label="Canceled"}[1h]))
+              / clamp_min(sum(rate(ml_predictions_total[1h])), 1e-9)
+            - 0.4617
+          ) > 0.10
+        for: 1h
+        labels:
+          severity: medium
+        annotations:
+          summary: "La proporcion de 'Canceled' predichos se alejo del baseline (0.4617)"
+          runbook: "RUNBOOK.md#distribuciondeprediccionescambio"
+
+      - alert: DriftDeEntrada
+        # PSI publicado por el job `python -m src.monitoring.drift` (evento
+        # drift_report en los logs, o el gauge si se empuja a Prometheus).
+        # La alerta solo mira features prioritarias: drift en una feature con
+        # importancia 0 es un dato, no una alerta.
+        expr: max by (feature) (ml_feature_psi) > 0.2
+        for: 0m
+        labels:
+          severity: medium
+        annotations:
+          summary: "PSI > 0.2 en la feature {{ $labels.feature }}"
+          runbook: "RUNBOOK.md#driftdeentrada"
