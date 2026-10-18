@@ -19,8 +19,8 @@ htmlcov/
 .github/
 .gitignore
 
-# Datos y notebooks: el contenedor sirve predicciones, no entrena
-data/
+# Notebooks: nunca viajan. Los datos SI entran al contexto: el modelo se
+# entrena en la etapa de build (ver Dockerfile).
 notebooks/
 *.ipynb
 .ipynb_checkpoints/

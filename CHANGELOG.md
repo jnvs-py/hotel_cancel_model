@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## [0.3.1] - 2026-10-18
+
+### Corregido
+
+- **La imagen no se podia construir desde un clon limpio del repo.** El
+  `Dockerfile` copiaba `models/` del contexto, pero `models/` esta en
+  `.gitignore`: en GitHub Actions funcionaba (el workflow entrenaba antes de
+  construir) y en Render fallaba con `"/models": not found`. Ahora el modelo se
+  entrena **en la etapa de build** (`builder`), con `data/` en el contexto y
+  sin dependencias de desarrollo; la etapa de runtime sigue recibiendo solo el
+  artefacto entrenado. Build verificado desde cero: 45 s, prediccion identica.
+
+### Agregado
+
+- El `Dockerfile` acepta `--build-arg MODEL_VERSION` y `--build-arg FINGERPRINT`
+  para inyectar la version que deriva CI; sin argumentos cae a
+  `{pyproject}+{RENDER_GIT_COMMIT|local}`, de modo que Render tambien queda
+  versionado aunque no se configure nada.
+- Los workflows `ci.yml` y `release.yml` pasan esos build args, y el smoke de CI
+  ya no entrena fuera de la imagen (era trabajo duplicado).
+
 ## [0.3.0] - 2026-10-17
 
 Observabilidad y monitoreo del modelo (Fase 9 del agente, ejecutada paso a paso

@@ -49,13 +49,26 @@ O con el cliente incluido: `uv run python -m src.client`.
 | `POST /predict` | La prediccion. |
 | `GET /model-info` | Version, metricas, features y umbral del modelo cargado. |
 | `GET /metrics` | Metricas Prometheus (RED + ML). El scrape no se cuenta como prediccion. |
+| `GET /app` | Formulario de demostracion (frontend autocontenido, mismo origen). |
+| `GET /` | Redirige a `/app`. |
 
 ## Docker
 
 ```bash
-uv run python -m src.train                              # el modelo es artefacto de BUILD
 docker build --platform linux/amd64 -t hito1-reservas:local .
 docker run --rm -p 8000:8000 -e PORT=8000 hito1-reservas:local
+```
+
+El modelo se **entrena en la etapa de build** del Dockerfile (nunca en runtime):
+la imagen se construye desde un clon limpio del repo, sin pasos previos, y es
+determinista por `SEED`. El runtime solo recibe el artefacto ya entrenado, asi
+que los datos y las dependencias de entrenamiento no llegan a la imagen final.
+Para inyectar la version que deriva CI:
+
+```bash
+docker build --platform linux/amd64 \
+  --build-arg MODEL_VERSION="0.1.0+abc1234" --build-arg FINGERPRINT="..." \
+  -t hito1-reservas:local .
 ```
 
 ## Versionamiento del modelo

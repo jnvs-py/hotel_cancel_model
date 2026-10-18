@@ -57,11 +57,14 @@ jobs:
           echo "MODEL_VERSION=${BASE}+${SHA}" >> "$GITHUB_ENV"
           echo "FINGERPRINT=${FP}" >> "$GITHUB_ENV"
 
-      - name: Entrenar el modelo
-        run: uv run python -m src.train
-
-      - name: Construir imagen
-        run: docker build --platform linux/amd64 -t hito1-reservas:ci .
+      # El entrenamiento vive DENTRO de la etapa de build del Dockerfile: la
+      # imagen se construye desde un clon limpio (igual que en Render).
+      - name: Construir imagen versionada
+        run: |
+          docker build --platform linux/amd64 \
+            --build-arg MODEL_VERSION="$MODEL_VERSION" \
+            --build-arg FINGERPRINT="$FINGERPRINT" \
+            -t hito1-reservas:ci .
 
       - name: Arrancar el contenedor
         run: docker run -d --name api -p 8000:8000 -e PORT=8000 hito1-reservas:ci

@@ -1,8 +1,12 @@
 # syntax=docker/dockerfile:1
 # Plantilla u_docker_ml. Ajusta: version de Python, ruta del modulo de la app.
 # Construir SIEMPRE con: docker build --platform linux/amd64 -t <nombre>:local .
+#
+# El modelo se ENTRENA EN LA ETAPA DE BUILD, nunca en runtime. Asi la imagen es
+# autocontenida: se construye desde un clon limpio del repo (Render, cualquier
+# registro) sin pasos previos. El runtime solo recibe el artefacto ya entrenado.
 
-# ---------- Etapa 1: dependencias ----------
+# ---------- Etapa 1: dependencias + entrenamiento ----------
 FROM python:3.12-slim AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
@@ -21,6 +25,18 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY src/ ./src/
 RUN uv sync --frozen --no-dev
 
+# Datos y entrenamiento. Determinista por SEED: el mismo par (codigo, datos)
+# produce el mismo artefacto, que es justo lo que mide el fingerprint de CI.
+COPY data/ ./data/
+ARG MODEL_VERSION=""
+ARG FINGERPRINT=""
+RUN BASE=$(grep -m1 '^version' pyproject.toml | cut -d '"' -f2) \
+    && SHA=$(printf '%s' "${RENDER_GIT_COMMIT:-local}" | cut -c1-7) \
+    && export MODEL_VERSION="${MODEL_VERSION:-${BASE}+${SHA}}" \
+    && export FINGERPRINT="${FINGERPRINT}" \
+    && uv run python -m src.train \
+    && echo "modelo entrenado en build: ${MODEL_VERSION}"
+
 # ---------- Etapa 2: runtime ----------
 FROM python:3.12-slim AS runtime
 
@@ -36,8 +52,8 @@ WORKDIR /app
 COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
 COPY --chown=appuser:appuser src/ ./src/
 
-# El modelo ya viene entrenado: es un artefacto de build, no se entrena aqui.
-COPY --chown=appuser:appuser models/ ./models/
+# El artefacto viene YA ENTRENADO de la etapa de build: en runtime no se entrena.
+COPY --from=builder --chown=appuser:appuser /app/models ./models/
 
 # Formulario de demostracion servido en /app (mismo origen que la API).
 COPY --chown=appuser:appuser static/ ./static/

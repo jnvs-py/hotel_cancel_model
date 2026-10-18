@@ -49,7 +49,11 @@ jobs:
         run: uv run python -m src.train
 
       - name: Construir imagen versionada
-        run: docker build --platform linux/amd64 -t "hito1-reservas:${TAG}" .
+        run: |
+          docker build --platform linux/amd64 \
+            --build-arg MODEL_VERSION="$MODEL_VERSION" \
+            --build-arg FINGERPRINT="$FINGERPRINT" \
+            -t "hito1-reservas:${TAG}" .
 
       - name: Smoke test del contenedor
         run: |
