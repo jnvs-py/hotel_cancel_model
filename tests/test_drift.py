@@ -232,7 +232,9 @@ def test_pushgateway_inaccesible_no_mata_el_job(tmp_path, monkeypatch, baseline_
     assert "No se pudo publicar" in salida or "Metricas publicadas" in salida
 
 
-def test_cli_con_ventana_insuficiente_no_revienta(tmp_path, monkeypatch, baseline_sintetico, capsys):
+def test_cli_con_ventana_insuficiente_no_revienta(
+    tmp_path, monkeypatch, baseline_sintetico, capsys
+):
     """HALLAZGO con datos reales de produccion: el CLI con una ventana corta
     moria con KeyError al escribir el markdown, porque el early-return de
     'insuficiente' no llevaba model_version ni generated_at."""
@@ -251,6 +253,8 @@ def test_cli_con_ventana_insuficiente_no_revienta(tmp_path, monkeypatch, baselin
     assert cuerpo["status"] == "insuficiente"
     assert cuerpo["model_version"] == "0.0.0-test"
     assert cuerpo["generated_at"]
-    markdown = (tmp_path / "reports" / "drift" / f"{reportes[0].stem}.md").read_text(encoding="utf-8")
+    markdown = (tmp_path / "reports" / "drift" / f"{reportes[0].stem}.md").read_text(
+        encoding="utf-8"
+    )
     assert "insuficiente" in markdown
     assert "0.0.0-test" in markdown
