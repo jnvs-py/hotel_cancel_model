@@ -28,14 +28,29 @@ RUN uv sync --frozen --no-dev
 # Datos y entrenamiento. Determinista por SEED: el mismo par (codigo, datos)
 # produce el mismo artefacto, que es justo lo que mide el fingerprint de CI.
 COPY data/ ./data/
+
+# Los build args entran por ENV para que la expansion la haga el shell y no el
+# frontend de BuildKit (que expande los ARG dentro de RUN y vuelve confuso el log).
 ARG MODEL_VERSION=""
 ARG FINGERPRINT=""
+# Render exporta RENDER_GIT_COMMIT y traduce sus env vars a build args, pero
+# Docker solo acepta el valor si el ARG esta declarado: con esto la imagen
+# desplegada en Render queda versionada como {pyproject}+{sha del commit}.
+ARG RENDER_GIT_COMMIT=""
+ENV MODEL_VERSION_IN="${MODEL_VERSION}" \
+    FINGERPRINT_IN="${FINGERPRINT}"
+
+# Ojo: se llama al python del venv, NO a `uv run`. `uv run` re-sincroniza el
+# entorno y reinstala el grupo dev (matplotlib, ruff, pytest...) dentro del
+# build, engordando el .venv que se copia a la imagen final.
+# LOKY_MAX_CPU_COUNT=1 evita que joblib intente levantar un pool de procesos.
 RUN BASE=$(grep -m1 '^version' pyproject.toml | cut -d '"' -f2) \
     && SHA=$(printf '%s' "${RENDER_GIT_COMMIT:-local}" | cut -c1-7) \
-    && export MODEL_VERSION="${MODEL_VERSION:-${BASE}+${SHA}}" \
-    && export FINGERPRINT="${FINGERPRINT}" \
-    && uv run python -m src.train \
-    && echo "modelo entrenado en build: ${MODEL_VERSION}"
+    && VERSION="${MODEL_VERSION_IN:-${BASE}+${SHA}}" \
+    && echo "entrenando el modelo ${VERSION}" \
+    && MODEL_VERSION="$VERSION" FINGERPRINT="${FINGERPRINT_IN}" LOKY_MAX_CPU_COUNT=1 \
+       .venv/bin/python -m src.train \
+    && echo "modelo entrenado en build: ${VERSION}"
 
 # ---------- Etapa 2: runtime ----------
 FROM python:3.12-slim AS runtime

@@ -116,6 +116,12 @@ def _feature_importance(pipeline, X, y, muestra=1500, repeticiones=3):
 
     Se guarda en la metadata para que el job de drift sepa QUE features vigilar
     primero: deriva en una feature irrelevante es un dato, no una alerta.
+
+    n_jobs=1 a proposito: con n_jobs=-1 joblib levanta un pool de procesos con
+    loky, y en entornos restringidos (el sandbox de build de Render, por
+    ejemplo) el pool se cuelga: no hay cores fisicos que detectar y los workers
+    no arrancan. El entrenamiento completo tarda segundos, asi que no vale la
+    pena arriesgar un cuelgue por paralelizar esta parte.
     """
     from sklearn.inspection import permutation_importance
 
@@ -123,7 +129,7 @@ def _feature_importance(pipeline, X, y, muestra=1500, repeticiones=3):
     X_m = X.sample(n=tamano, random_state=42)
     y_m = y.loc[X_m.index]
     resultado = permutation_importance(
-        pipeline, X_m, y_m, n_repeats=repeticiones, random_state=42, scoring="roc_auc", n_jobs=-1
+        pipeline, X_m, y_m, n_repeats=repeticiones, random_state=42, scoring="roc_auc", n_jobs=1
     )
     return {
         columna: round(float(valor), 6)
