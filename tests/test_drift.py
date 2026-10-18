@@ -230,3 +230,27 @@ def test_pushgateway_inaccesible_no_mata_el_job(tmp_path, monkeypatch, baseline_
     salida = capsys.readouterr().out
     assert codigo == 0
     assert "No se pudo publicar" in salida or "Metricas publicadas" in salida
+
+
+def test_cli_con_ventana_insuficiente_no_revienta(tmp_path, monkeypatch, baseline_sintetico, capsys):
+    """HALLAZGO con datos reales de produccion: el CLI con una ventana corta
+    moria con KeyError al escribir el markdown, porque el early-return de
+    'insuficiente' no llevaba model_version ni generated_at."""
+    monkeypatch.setattr(config, "MODELS_DIR", tmp_path)
+    monkeypatch.setattr(config, "REPORTS_DIR", tmp_path / "reports")
+    (tmp_path / "baseline.json").write_text(json.dumps(baseline_sintetico), encoding="utf-8")
+    corta = tmp_path / "corta.csv"
+    _ventana(np.random.default_rng(3), n=8).to_csv(corta, index=False)
+
+    codigo = main(["--actual", str(corta)])
+
+    assert codigo == 0  # insuficiente no es drift: no falla el job
+    reportes = list((tmp_path / "reports" / "drift").glob("*.json"))
+    assert len(reportes) == 1
+    cuerpo = json.loads(reportes[0].read_text(encoding="utf-8"))
+    assert cuerpo["status"] == "insuficiente"
+    assert cuerpo["model_version"] == "0.0.0-test"
+    assert cuerpo["generated_at"]
+    markdown = (tmp_path / "reports" / "drift" / f"{reportes[0].stem}.md").read_text(encoding="utf-8")
+    assert "insuficiente" in markdown
+    assert "0.0.0-test" in markdown

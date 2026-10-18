@@ -134,7 +134,15 @@ def drift_report(
 ) -> dict:
     """Compara la ventana contra el baseline. Ventana corta = insuficiente."""
     if len(actual) < minimo:
-        return {"status": "insuficiente", "rows": len(actual), "min_rows": minimo}
+        # Mismas claves de identidad que el reporte completo: los consumidores
+        # (markdown, metrica derivada de logs) no tienen que saber del caso.
+        return {
+            "status": "insuficiente",
+            "rows": len(actual),
+            "min_rows": minimo,
+            "model_version": baseline.get("model_version"),
+            "generated_at": datetime.now(UTC).isoformat(),
+        }
 
     importancia = importancia or {}
     caracteristicas: dict[str, dict] = {}
@@ -187,11 +195,11 @@ def drift_report(
 
 def _escribir_markdown(reporte: dict, destino: Path) -> None:
     lineas = [
-        f"# Reporte de drift — {reporte['model_version']}",
+        f"# Reporte de drift — {reporte.get('model_version', 'version desconocida')}",
         "",
-        f"- Generado: {reporte['generated_at']}",
-        f"- Filas de la ventana: {reporte['rows']}",
-        f"- Estado general: **{reporte['status']}**",
+        f"- Generado: {reporte.get('generated_at', '-')}",
+        f"- Filas de la ventana: {reporte.get('rows', '-')}",
+        f"- Estado general: **{reporte.get('status', '-')}**",
         "",
     ]
     if reporte["status"] == "insuficiente":

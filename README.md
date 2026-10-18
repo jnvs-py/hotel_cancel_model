@@ -125,6 +125,9 @@ Para forzar un release nuevo basta un commit que toque codigo o datos.
 
 ## Observabilidad
 
+> Guia completa de revision (logs, metricas y agregaciones, con comandos listos
+> para copiar): **[docs/OBSERVABILIDAD_GUIA.md](docs/OBSERVABILIDAD_GUIA.md)**.
+
 Cada peticion deja evidencia sin entrar al contenedor. Los eventos van a
 **stdout como una linea JSON** (nunca a archivo: el disco del contenedor se
 pierde) y el `X-Request-ID` entrante se propaga al log, al header de la
