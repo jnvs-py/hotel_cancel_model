@@ -71,6 +71,39 @@ docker build --platform linux/amd64 \
   -t hito1-reservas:local .
 ```
 
+## Despliegue en Render
+
+El servicio esta desplegado en Render (plan Free) con el formulario y la API en
+la misma URL:
+
+| | |
+|---|---|
+| **Formulario** | <https://hotel-cancel-model.onrender.com/app> |
+| **Raiz** | <https://hotel-cancel-model.onrender.com> (redirige al formulario) |
+| **API (Swagger)** | <https://hotel-cancel-model.onrender.com/docs> |
+| **Health / metricas** | `/health`, `/ready`, `/metrics` |
+
+El contenedor es el mismo `Dockerfile` de este repo: Render lo construye desde
+un clon limpio de `main`, entrena el modelo en la etapa de build e inyecta el
+SHA del commit como version (`0.1.0+e32b687` en el primer despliegue).
+
+### Configuracion del servicio
+
+| Ajuste | Valor |
+|---|---|
+| Runtime | Docker |
+| Plan | Free (512 MB RAM, se duerme tras 15 min sin trafico) |
+| Health Check Path | `/health` |
+| Auto-Deploy | `After CI Checks Pass` (si el CI falla, no se despliega) |
+| Environment | `MODEL_NAME=hotel-cancel`, `LOG_LEVEL=INFO` |
+
+**Arranque en frio:** con el plan Free el contenedor se duerme y la primera
+peticion tarda 30-90 s. Para una demo o sustentacion, abrir la URL unos minutos
+antes y hacer un `curl /health` de calentamiento.
+
+**Rollback:** desde el dashboard (Deploys -> Rollback) o con el CLI:
+`render deploys` y `render logs`.
+
 ## Versionamiento del modelo
 
 La version NO se edita a mano: la deriva CI en cada entrenamiento como

@@ -1,0 +1,94 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - heading "Cancelara esta reserva?" [level=1] [ref=e4]
+    - paragraph [ref=e5]: Completa los datos de la reserva y el modelo predice si el huesped cancelara. Ningun dato sale de tu navegador salvo la peticion de prediccion.
+    - generic [ref=e6]:
+      - generic [ref=e7]: "modelo: cargando..."
+      - generic [ref=e8]: "umbral: -"
+      - link "API docs" [ref=e9] [cursor=pointer]:
+        - /url: /docs
+      - link "metadata" [ref=e10] [cursor=pointer]:
+        - /url: /model-info
+  - generic [ref=e11]:
+    - group "Huespedes" [ref=e12]:
+      - generic [ref=e14]:
+        - generic [ref=e15]:
+          - generic [ref=e16]: Adultos (0-4)
+          - spinbutton "Adultos (0-4)" [ref=e17]: "2"
+        - generic [ref=e18]:
+          - generic [ref=e19]: Ninos (0-10)
+          - spinbutton "Ninos (0-10)" [ref=e20]: "0"
+        - generic [ref=e21]:
+          - generic [ref=e22]: Huesped recurrente (0 o 1)
+          - spinbutton "Huesped recurrente (0 o 1)" [ref=e23]: "0"
+        - generic [ref=e24]:
+          - generic [ref=e25]: Pide parqueadero (0 o 1)
+          - spinbutton "Pide parqueadero (0 o 1)" [ref=e26]: "0"
+    - group "Estancia" [ref=e27]:
+      - generic [ref=e29]:
+        - generic [ref=e30]:
+          - generic [ref=e31]: Noches de fin de semana (0-7)
+          - spinbutton "Noches de fin de semana (0-7)" [ref=e32]: "1"
+        - generic [ref=e33]:
+          - generic [ref=e34]: Noches entre semana (0-17)
+          - spinbutton "Noches entre semana (0-17)" [ref=e35]: "2"
+        - generic [ref=e36]:
+          - generic [ref=e37]: Peticiones especiales (0-5)
+          - spinbutton "Peticiones especiales (0-5)" [ref=e38]: "0"
+        - generic [ref=e39]:
+          - generic [ref=e40]: Precio medio por habitacion (0-540 EUR)
+          - spinbutton "Precio medio por habitacion (0-540 EUR)" [ref=e41]: "65.0"
+    - group "Fechas" [ref=e42]:
+      - generic [ref=e44]:
+        - generic [ref=e45]:
+          - generic [ref=e46]: Dias entre la reserva y la llegada (0-443)
+          - spinbutton "Dias entre la reserva y la llegada (0-443)" [ref=e47]: "224"
+        - generic [ref=e48]:
+          - generic [ref=e49]: Mes de llegada (1-12)
+          - spinbutton "Mes de llegada (1-12)" [ref=e50]: "10"
+        - generic [ref=e51]:
+          - generic [ref=e52]: Dia del mes de llegada (1-31)
+          - spinbutton "Dia del mes de llegada (1-31)" [ref=e53]: "2"
+    - group "Historial del cliente" [ref=e54]:
+      - generic [ref=e56]:
+        - generic [ref=e57]:
+          - generic [ref=e58]: Cancelaciones previas (0-13)
+          - spinbutton "Cancelaciones previas (0-13)" [ref=e59]: "0"
+        - generic [ref=e60]:
+          - generic [ref=e61]: Reservas previas no canceladas (0-58)
+          - spinbutton "Reservas previas no canceladas (0-58)" [ref=e62]: "0"
+    - group "Tipo de reserva" [ref=e63]:
+      - generic [ref=e65]:
+        - generic [ref=e66]:
+          - generic [ref=e67]: Plan de comidas
+          - combobox "Plan de comidas" [ref=e68]:
+            - option "Meal Plan 1" [selected]
+            - option "Meal Plan 2"
+            - option "Meal Plan 3"
+            - option "Not Selected"
+        - generic [ref=e69]:
+          - generic [ref=e70]: Tipo de habitacion
+          - combobox "Tipo de habitacion" [ref=e71]:
+            - option "Room_Type 1" [selected]
+            - option "Room_Type 2"
+            - option "Room_Type 3"
+            - option "Room_Type 4"
+            - option "Room_Type 5"
+            - option "Room_Type 6"
+            - option "Room_Type 7"
+        - generic [ref=e72]:
+          - generic [ref=e73]: Canal de la reserva
+          - combobox "Canal de la reserva" [ref=e74]:
+            - option "Online"
+            - option "Offline" [selected]
+            - option "Corporate"
+            - option "Complementary"
+            - option "Aviation"
+    - generic [ref=e75]:
+      - button "Predecir" [ref=e76] [cursor=pointer]
+      - button "Restablecer" [ref=e77] [cursor=pointer]
+      - button "Ver payload JSON" [ref=e78] [cursor=pointer]
+  - contentinfo [ref=e79]:
+    - text: "El modelo no cancela reservas: solo estima la probabilidad de que un huesped lo haga. Cada prediccion queda auditada con su"
+    - code [ref=e80]: request_id
+    - text: .

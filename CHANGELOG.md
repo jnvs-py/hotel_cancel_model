@@ -1,5 +1,32 @@
 # CHANGELOG
 
+## [0.4.0] - 2026-10-18
+
+### Agregado
+
+- **Frontend de demostracion** en `/app`: formulario autocontenido (HTML+CSS+JS,
+  18 KB, sin CDN ni build step) con las 5 secciones de los 16 campos del
+  contrato, validacion cruzada local (dia real del mes), defaults del fixture,
+  resultado con insignia, barra de probabilidad, umbral, `request_id` y latencia,
+  y manejo de 422/503/500. La raiz `/` redirige al formulario.
+- **Despliegue en Render**: <https://hotel-cancel-model.onrender.com> con
+  auto-deploy condicionado al CI (`After CI Checks Pass`), health check en
+  `/health` y plan Free. El modelo se entrena en la etapa de build del
+  Dockerfile y la version se deriva del SHA del commit (`{pyproject}+{sha}`).
+- El smoke de CI verifica el formulario (`/app` responde HTML sin redirect, los
+  16 campos estan, la raiz redirige).
+
+### Corregido
+
+- **El build se colgaba en Render** (20 min sin avanzar): `permutation_importance`
+  con `n_jobs=-1` levanta un pool de procesos con loky, y en el sandbox de build
+  de Render (0 cores fisicos detectables) los workers no arrancan. Ahora
+  `n_jobs=1`: el entrenamiento completo tarda 6 s y no vale arriesgar el cuelgue.
+- **`uv run` reinstalaba el grupo dev dentro del build** (matplotlib, ruff,
+  pytest), engordando el `.venv` que se copia a la imagen final. Ahora se llama
+  directo al python del venv: la imagen baja de 701 MB a 691 MB y el build de
+  45 s a 34 s.
+
 ## [0.3.1] - 2026-10-18
 
 ### Corregido
