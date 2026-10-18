@@ -11,6 +11,7 @@ DATA_PATH = REPO_ROOT / "data" / "hotel_reservations.csv"
 MODELS_DIR = REPO_ROOT / "models"
 REPORTS_DIR = REPO_ROOT / "reports"
 FIGURES_DIR = REPORTS_DIR / "figures"
+STATIC_DIR = REPO_ROOT / "static"
 
 SEED = 42
 TEST_SIZE = 0.2

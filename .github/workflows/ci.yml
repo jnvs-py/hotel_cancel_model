@@ -104,6 +104,17 @@ jobs:
           EOF
         shell: bash
 
+      - name: Verificar el formulario en /app
+        run: |
+          # Sin redirect (FileResponse directo): un curl simple debe ver el HTML.
+          curl -sf http://localhost:8000/app | grep -q "<form" \
+            || { echo "El formulario no se sirve en /app"; exit 1; }
+          curl -sf http://localhost:8000/app | grep -q 'name="lead_time"' \
+            || { echo "El formulario no tiene los campos del contrato"; exit 1; }
+          CURVA=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/)
+          [ "$CURVA" = "307" ] || { echo "La raiz deberia redirigir (307), dio $CURVA"; exit 1; }
+          echo "OK: formulario servido y raiz redirigiendo"
+
       - name: Verificar /metrics y el evento prediction
         run: |
           echo "== metricas =="

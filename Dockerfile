@@ -39,6 +39,9 @@ COPY --chown=appuser:appuser src/ ./src/
 # El modelo ya viene entrenado: es un artefacto de build, no se entrena aqui.
 COPY --chown=appuser:appuser models/ ./models/
 
+# Formulario de demostracion servido en /app (mismo origen que la API).
+COPY --chown=appuser:appuser static/ ./static/
+
 USER appuser
 
 EXPOSE 8000

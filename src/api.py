@@ -14,11 +14,11 @@ import pandas as pd
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, Field, model_validator
 
-from src.config import CATEGORICAL_LEVELS, MODELS_DIR, NUMERIC_RANGES
+from src.config import CATEGORICAL_LEVELS, MODELS_DIR, NUMERIC_RANGES, STATIC_DIR
 from src.model import load_model, model_version
 from src.observability import (
     INVALID_INPUT,
@@ -331,3 +331,26 @@ def predict(peticion: PredictRequest):
 assert set(PredictRequest.model_fields["type_of_meal_plan"].annotation.__args__) == set(
     CATEGORICAL_LEVELS["type_of_meal_plan"]
 )
+
+
+# ---------------------------------------------------------------------------
+# Formulario de demostracion (frontend estatico)
+# ---------------------------------------------------------------------------
+# El HTML es autocontenido (CSS y JS embebidos), por eso se sirve el archivo
+# directo en vez de montar StaticFiles: un Mount en "/app" responderia 307
+# hacia "/app/" y obligaria a seguir el redirect (rompe curls y scrapers).
+# Mismo origen que /predict: sin CORS y sin un segundo despliegue.
+# Si algun dia se agregan assets separados, cambiar a
+# `app.mount("/app", StaticFiles(directory=STATIC_DIR, html=True))`.
+
+
+@app.get("/app", include_in_schema=False)
+@app.get("/app/", include_in_schema=False)
+def formulario():
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/", include_in_schema=False)
+def raiz():
+    """La raiz manda al formulario: es lo primero que abre quien recibe la URL."""
+    return RedirectResponse(url="/app")

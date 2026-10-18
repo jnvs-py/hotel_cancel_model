@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.config import CATEGORICAL_LEVELS, REPO_ROOT
+from src.schema import FEATURE_ORDER
 
 EJEMPLO = json.loads((REPO_ROOT / "tests" / "fixtures" / "request_ejemplo.json").read_text())
 
@@ -119,3 +120,20 @@ def test_los_literal_no_se_desincronizan_de_config(cliente):
 
 def test_docs_disponible(cliente):
     assert cliente.get("/docs").status_code == 200
+
+
+def test_el_formulario_se_sirve_en_app(cliente):
+    """El frontend es autocontenido y se sirve sin redirect (curls y scrapers)."""
+    respuesta = cliente.get("/app", follow_redirects=False)
+    assert respuesta.status_code == 200
+    assert "text/html" in respuesta.headers["content-type"]
+    assert "<form" in respuesta.text
+    # Los 16 campos del contrato estan en el formulario.
+    for campo in FEATURE_ORDER:
+        assert f'name="{campo}"' in respuesta.text, f"falta {campo} en el formulario"
+
+
+def test_la_raiz_manda_al_formulario(cliente):
+    respuesta = cliente.get("/", follow_redirects=False)
+    assert respuesta.status_code in (307, 302, 303)
+    assert respuesta.headers["location"] == "/app"

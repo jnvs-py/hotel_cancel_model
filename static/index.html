@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prediccion de cancelacion de reservas</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8F%A8%3C/text%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #f4f6fb;
+    --card: #ffffff;
+    --texto: #16202b;
+    --suave: #5d6b7a;
+    --borde: #dde3ec;
+    --acento: #2456d6;
+    --acento-suave: #e8eefc;
+    --ok: #128a5b;
+    --ok-suave: #e3f6ed;
+    --alerta: #c0392b;
+    --alerta-suave: #fdeceb;
+    --aviso: #a86400;
+    --aviso-suave: #fff4e0;
+    --radio: 12px;
+    --sombra: 0 1px 2px rgba(16, 30, 54, .06), 0 8px 24px rgba(16, 30, 54, .06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #10151c; --card: #171e27; --texto: #e8edf4; --suave: #9aa8b8;
+      --borde: #26303d; --acento: #7aa2ff; --acento-suave: #1b2740;
+      --ok: #4ed19a; --ok-suave: #142a22; --alerta: #ff8b7d; --alerta-suave: #341a18;
+      --aviso: #f0c069; --aviso-suave: #32270f;
+      --sombra: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .25);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 16px 64px;
+    background: var(--bg); color: var(--texto);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .contenedor { max-width: 780px; margin: 0 auto; }
+  header { margin-bottom: 24px; }
+  h1 { font-size: 26px; line-height: 1.2; margin: 0 0 8px; letter-spacing: -.02em; }
+  .sub { color: var(--suave); margin: 0 0 12px; }
+  .meta {
+    display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    font-size: 12.5px; color: var(--suave);
+  }
+  .chip {
+    background: var(--acento-suave); color: var(--acento);
+    padding: 3px 10px; border-radius: 999px; font-weight: 600;
+  }
+  .chip.neutro { background: var(--bg); color: var(--suave); border: 1px solid var(--borde); }
+  form, .resultado, .aviso-caja {
+    background: var(--card); border: 1px solid var(--borde);
+    border-radius: var(--radio); box-shadow: var(--sombra);
+  }
+  form { padding: 4px 20px 20px; }
+  fieldset { border: 0; margin: 0; padding: 20px 0 4px; }
+  fieldset + fieldset { border-top: 1px solid var(--borde); }
+  legend {
+    padding: 0; font-size: 12px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--suave); margin-bottom: 14px;
+  }
+  .campos { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+  .campo { display: flex; flex-direction: column; gap: 6px; }
+  .campo.ancho { grid-column: 1 / -1; }
+  label { font-size: 13.5px; font-weight: 600; }
+  .ayuda { font-size: 12px; color: var(--suave); font-weight: 400; }
+  input, select {
+    width: 100%; padding: 10px 12px; font: inherit; color: var(--texto);
+    background: var(--bg); border: 1px solid var(--borde); border-radius: 9px;
+  }
+  input:focus, select:focus {
+    outline: 2px solid var(--acento); outline-offset: 1px; background: var(--card);
+  }
+  input:invalid { border-color: var(--alerta); }
+  .acciones {
+    display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+    padding-top: 20px; border-top: 1px solid var(--borde); margin-top: 8px;
+  }
+  button {
+    font: inherit; font-weight: 650; padding: 11px 20px; border-radius: 10px;
+    border: 1px solid transparent; cursor: pointer;
+  }
+  button.principal { background: var(--acento); color: #fff; }
+  button.principal:hover { filter: brightness(1.06); }
+  button.principal[disabled] { opacity: .6; cursor: progress; }
+  button.secundario { background: var(--bg); color: var(--texto); border-color: var(--borde); }
+  button.enlace {
+    background: none; border: 0; color: var(--suave); text-decoration: underline;
+    padding: 6px 4px; font-weight: 500;
+  }
+  .resultado { margin-top: 20px; padding: 20px; display: none; }
+  .resultado.visible { display: block; }
+  .veredicto { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .insignia {
+    font-size: 19px; font-weight: 750; padding: 10px 18px; border-radius: 10px;
+    letter-spacing: -.01em;
+  }
+  .insignia.cancela { background: var(--alerta-suave); color: var(--alerta); }
+  .insignia.no-cancela { background: var(--ok-suave); color: var(--ok); }
+  .insignia.error { background: var(--aviso-suave); color: var(--aviso); }
+  .detalle { color: var(--suave); font-size: 13.5px; }
+  .barra { margin: 18px 0 6px; height: 10px; background: var(--bg); border-radius: 999px; overflow: hidden; }
+  .barra > span { display: block; height: 100%; background: var(--acento); transition: width .45s ease; }
+  .escala { display: flex; justify-content: space-between; font-size: 12px; color: var(--suave); }
+  .trazabilidad {
+    margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--borde);
+    font-size: 12.5px; color: var(--suave); display: grid; gap: 4px;
+  }
+  .trazabilidad code { font-size: 12px; word-break: break-all; }
+  .aviso-caja { margin-top: 20px; padding: 16px 20px; display: none; }
+  .aviso-caja.visible { display: block; }
+  .aviso-caja h3 { margin: 0 0 8px; font-size: 15px; color: var(--alerta); }
+  .aviso-caja ul { margin: 0; padding-left: 20px; }
+  .aviso-caja li { margin-bottom: 4px; }
+  pre {
+    margin: 14px 0 0; padding: 14px; background: var(--bg); border: 1px solid var(--borde);
+    border-radius: 9px; overflow-x: auto; font-size: 12.5px; display: none;
+  }
+  pre.visible { display: block; }
+  footer { margin-top: 28px; font-size: 12.5px; color: var(--suave); text-align: center; }
+  footer a { color: var(--acento); }
+  @media (max-width: 620px) {
+    .campos { grid-template-columns: 1fr; }
+    h1 { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+<div class="contenedor">
+  <header>
+    <h1>Cancelara esta reserva?</h1>
+    <p class="sub">
+      Completa los datos de la reserva y el modelo predice si el huesped cancelara.
+      Ningun dato sale de tu navegador salvo la peticion de prediccion.
+    </p>
+    <div class="meta">
+      <span class="chip" id="version">modelo: cargando...</span>
+      <span class="chip neutro" id="umbral">umbral: -</span>
+      <a class="chip neutro" href="/docs">API docs</a>
+      <a class="chip neutro" href="/model-info">metadata</a>
+    </div>
+  </header>
+
+  <form id="formulario" novalidate>
+    <fieldset>
+      <legend>Huespedes</legend>
+      <div class="campos">
+        <div class="campo">
+          <label for="no_of_adults">Adultos <span class="ayuda">(0-4)</span></label>
+          <input id="no_of_adults" name="no_of_adults" type="number" min="0" max="4" step="1" value="2" required>
+        </div>
+        <div class="campo">
+          <label for="no_of_children">Ninos <span class="ayuda">(0-10)</span></label>
+          <input id="no_of_children" name="no_of_children" type="number" min="0" max="10" step="1" value="0" required>
+        </div>
+        <div class="campo">
+          <label for="repeated_guest">Huesped recurrente <span class="ayuda">(0 o 1)</span></label>
+          <input id="repeated_guest" name="repeated_guest" type="number" min="0" max="1" step="1" value="0" required>
+        </div>
+        <div class="campo">
+          <label for="required_car_parking_space">Pide parqueadero <span class="ayuda">(0 o 1)</span></label>
+          <input id="required_car_parking_space" name="required_car_parking_space" type="number" min="0" max="1" step="1" value="0" required>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Estancia</legend>
+      <div class="campos">
+        <div class="campo">
+          <label for="no_of_weekend_nights">Noches de fin de semana <span class="ayuda">(0-7)</span></label>
+          <input id="no_of_weekend_nights" name="no_of_weekend_nights" type="number" min="0" max="7" step="1" value="1" required>
+        </div>
+        <div class="campo">
+          <label for="no_of_week_nights">Noches entre semana <span class="ayuda">(0-17)</span></label>
+          <input id="no_of_week_nights" name="no_of_week_nights" type="number" min="0" max="17" step="1" value="2" required>
+        </div>
+        <div class="campo">
+          <label for="no_of_special_requests">Peticiones especiales <span class="ayuda">(0-5)</span></label>
+          <input id="no_of_special_requests" name="no_of_special_requests" type="number" min="0" max="5" step="1" value="0" required>
+        </div>
+        <div class="campo">
+          <label for="avg_price_per_room">Precio medio por habitacion <span class="ayuda">(0-540 EUR)</span></label>
+          <input id="avg_price_per_room" name="avg_price_per_room" type="number" min="0" max="540" step="0.01" value="65.0" required>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Fechas</legend>
+      <div class="campos">
+        <div class="campo">
+          <label for="lead_time">Dias entre la reserva y la llegada <span class="ayuda">(0-443)</span></label>
+          <input id="lead_time" name="lead_time" type="number" min="0" max="443" step="1" value="224" required>
+        </div>
+        <div class="campo">
+          <label for="arrival_month">Mes de llegada <span class="ayuda">(1-12)</span></label>
+          <input id="arrival_month" name="arrival_month" type="number" min="1" max="12" step="1" value="10" required>
+        </div>
+        <div class="campo">
+          <label for="arrival_date">Dia del mes de llegada <span class="ayuda">(1-31)</span></label>
+          <input id="arrival_date" name="arrival_date" type="number" min="1" max="31" step="1" value="2" required>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Historial del cliente</legend>
+      <div class="campos">
+        <div class="campo">
+          <label for="no_of_previous_cancellations">Cancelaciones previas <span class="ayuda">(0-13)</span></label>
+          <input id="no_of_previous_cancellations" name="no_of_previous_cancellations" type="number" min="0" max="13" step="1" value="0" required>
+        </div>
+        <div class="campo">
+          <label for="no_of_previous_bookings_not_canceled">Reservas previas no canceladas <span class="ayuda">(0-58)</span></label>
+          <input id="no_of_previous_bookings_not_canceled" name="no_of_previous_bookings_not_canceled" type="number" min="0" max="58" step="1" value="0" required>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Tipo de reserva</legend>
+      <div class="campos">
+        <div class="campo">
+          <label for="type_of_meal_plan">Plan de comidas</label>
+          <select id="type_of_meal_plan" name="type_of_meal_plan" required>
+            <option>Meal Plan 1</option>
+            <option>Meal Plan 2</option>
+            <option>Meal Plan 3</option>
+            <option>Not Selected</option>
+          </select>
+        </div>
+        <div class="campo">
+          <label for="room_type_reserved">Tipo de habitacion</label>
+          <select id="room_type_reserved" name="room_type_reserved" required>
+            <option>Room_Type 1</option>
+            <option>Room_Type 2</option>
+            <option>Room_Type 3</option>
+            <option>Room_Type 4</option>
+            <option>Room_Type 5</option>
+            <option>Room_Type 6</option>
+            <option>Room_Type 7</option>
+          </select>
+        </div>
+        <div class="campo ancho">
+          <label for="market_segment_type">Canal de la reserva</label>
+          <select id="market_segment_type" name="market_segment_type" required>
+            <option>Online</option>
+            <option selected>Offline</option>
+            <option>Corporate</option>
+            <option>Complementary</option>
+            <option>Aviation</option>
+          </select>
+        </div>
+      </div>
+    </fieldset>
+
+    <div class="acciones">
+      <button type="submit" class="principal" id="boton-predecir">Predecir</button>
+      <button type="button" class="secundario" id="boton-restablecer">Restablecer</button>
+      <button type="button" class="enlace" id="boton-payload">Ver payload JSON</button>
+    </div>
+    <pre id="payload"></pre>
+  </form>
+
+  <div class="resultado" id="resultado" aria-live="polite">
+    <div class="veredicto">
+      <span class="insignia" id="insignia">-</span>
+      <span class="detalle" id="explicacion"></span>
+    </div>
+    <div class="barra"><span id="barra-probabilidad" style="width:0%"></span></div>
+    <div class="escala">
+      <span>probabilidad de cancelacion: <strong id="probabilidad">-</strong></span>
+      <span>umbral de decision: <strong id="umbral-usado">-</strong></span>
+    </div>
+    <div class="trazabilidad">
+      <span>modelo: <code id="traza-version">-</code></span>
+      <span>request_id: <code id="traza-request">-</code></span>
+      <span>latencia: <code id="traza-latencia">-</code></span>
+    </div>
+  </div>
+
+  <div class="aviso-caja" id="aviso" role="alert">
+    <h3 id="aviso-titulo">No se pudo predecir</h3>
+    <ul id="aviso-detalle"></ul>
+  </div>
+
+  <footer>
+    El modelo no cancela reservas: solo estima la probabilidad de que un huesped lo haga.
+    Cada prediccion queda auditada con su <code>request_id</code>.
+  </footer>
+</div>
+
+<script>
+const DIAS_POR_MES = {1:31, 2:29, 3:31, 4:30, 5:31, 6:30, 7:31, 8:31, 9:30, 10:31, 11:30, 12:31};
+const DEFAULTS = {
+  no_of_adults: 2, no_of_children: 0, no_of_weekend_nights: 1, no_of_week_nights: 2,
+  required_car_parking_space: 0, lead_time: 224, arrival_month: 10, arrival_date: 2,
+  repeated_guest: 0, no_of_previous_cancellations: 0, no_of_previous_bookings_not_canceled: 0,
+  avg_price_per_room: 65.0, no_of_special_requests: 0, type_of_meal_plan: "Meal Plan 1",
+  room_type_reserved: "Room_Type 1", market_segment_type: "Offline"
+};
+
+const formulario = document.getElementById("formulario");
+const resultado = document.getElementById("resultado");
+const aviso = document.getElementById("aviso");
+const botonPredecir = document.getElementById("boton-predecir");
+
+function leerPayload() {
+  const datos = new FormData(formulario);
+  const payload = {};
+  for (const campo of formulario.elements) {
+    if (!campo.name) continue;
+    const valor = datos.get(campo.name);
+    payload[campo.name] = campo.type === "number" ? Number(valor) : valor;
+  }
+  return payload;
+}
+
+function mostrarAviso(titulo, lineas) {
+  document.getElementById("aviso-titulo").textContent = titulo;
+  const lista = document.getElementById("aviso-detalle");
+  lista.innerHTML = "";
+  for (const linea of lineas) {
+    const li = document.createElement("li");
+    li.textContent = linea;
+    lista.appendChild(li);
+  }
+  aviso.classList.add("visible");
+  resultado.classList.remove("visible");
+}
+
+function limpiarAviso() {
+  aviso.classList.remove("visible");
+}
+
+function validarLocalmente(payload) {
+  const problemas = [];
+  if (payload.no_of_adults + payload.no_of_children < 1) {
+    problemas.push("La reserva necesita al menos un huesped (adultos + ninos >= 1).");
+  }
+  const maximo = DIAS_POR_MES[payload.arrival_month];
+  if (maximo && payload.arrival_date > maximo) {
+    problemas.push(`El mes ${payload.arrival_month} no tiene dia ${payload.arrival_date} (maximo ${maximo}).`);
+  }
+  return problemas;
+}
+
+function mostrarResultado(cuerpo, milisegundos) {
+  limpiarAviso();
+  const cancela = cuerpo.prediction === "Canceled";
+  const insignia = document.getElementById("insignia");
+  insignia.textContent = cancela ? "CANCELA" : "NO CANCELA";
+  insignia.className = "insignia " + (cancela ? "cancela" : "no-cancela");
+  document.getElementById("explicacion").textContent = cancela
+    ? `La probabilidad ${(cuerpo.probability * 100).toFixed(2)}% supera el umbral de decision.`
+    : `La probabilidad ${(cuerpo.probability * 100).toFixed(2)}% esta por debajo del umbral.`;
+  document.getElementById("barra-probabilidad").style.width = `${cuerpo.probability * 100}%`;
+  document.getElementById("probabilidad").textContent = (cuerpo.probability * 100).toFixed(2) + "%";
+  document.getElementById("umbral-usado").textContent = cuerpo.threshold;
+  document.getElementById("traza-version").textContent = cuerpo.model_version;
+  document.getElementById("traza-request").textContent = cuerpo.request_id;
+  document.getElementById("traza-latencia").textContent = milisegundos.toFixed(0) + " ms";
+  resultado.classList.add("visible");
+}
+
+async function predecir(evento) {
+  evento.preventDefault();
+  const payload = leerPayload();
+  const problemas = validarLocalmente(payload);
+  if (problemas.length) {
+    mostrarAviso("Revisa los datos", problemas);
+    return;
+  }
+  botonPredecir.disabled = true;
+  botonPredecir.textContent = "Prediciendo...";
+  const inicio = performance.now();
+  try {
+    const respuesta = await fetch("/predict", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const milisegundos = performance.now() - inicio;
+    if (respuesta.status === 422) {
+      const detalle = await respuesta.json();
+      mostrarAviso("El contrato rechazo los datos", (detalle.detail || []).map(
+        (e) => `${(e.loc || []).slice(1).join(".")}: ${e.msg}`
+      ));
+    } else if (respuesta.status === 503) {
+      const detalle = await respuesta.json();
+      mostrarAviso("El modelo no esta disponible", [detalle.detail || "Artefacto no cargado."]);
+    } else if (!respuesta.ok) {
+      const detalle = await respuesta.json().catch(() => ({}));
+      mostrarAviso("Error del servicio", [detalle.detail || `HTTP ${respuesta.status}`]);
+    } else {
+      mostrarResultado(await respuesta.json(), milisegundos);
+    }
+  } catch (error) {
+    mostrarAviso("No se pudo contactar la API", [String(error)]);
+  } finally {
+    botonPredecir.disabled = false;
+    botonPredecir.textContent = "Predecir";
+  }
+}
+
+function restablecer() {
+  for (const campo of formulario.elements) {
+    if (campo.name && campo.name in DEFAULTS) campo.value = DEFAULTS[campo.name];
+  }
+  resultado.classList.remove("visible");
+  limpiarAviso();
+  document.getElementById("payload").classList.remove("visible");
+}
+
+function alternarPayload() {
+  const pre = document.getElementById("payload");
+  pre.textContent = JSON.stringify(leerPayload(), null, 2);
+  pre.classList.toggle("visible");
+}
+
+async function cargarMetadata() {
+  try {
+    const info = await (await fetch("/model-info")).json();
+    document.getElementById("version").textContent = `modelo: ${info.model_version}`;
+    document.getElementById("umbral").textContent = `umbral: ${info.threshold}`;
+    const f1 = info.metrics?.temporal?.f1;
+    if (f1) {
+      document.getElementById("version").title =
+        `F1 (split temporal): ${f1.toFixed(3)} | ROC-AUC: ${info.metrics.temporal.roc_auc.toFixed(3)}`;
+    }
+  } catch {
+    document.getElementById("version").textContent = "modelo: sin conexion con /model-info";
+  }
+}
+
+formulario.addEventListener("submit", predecir);
+document.getElementById("boton-restablecer").addEventListener("click", restablecer);
+document.getElementById("boton-payload").addEventListener("click", alternarPayload);
+cargarMetadata();
+</script>
+</body>
+</html>
