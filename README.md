@@ -157,11 +157,20 @@ job de drift), `model_loaded`, `input_invalid` (WARNING por campo),
 **Niveles:** `LOG_LEVEL` (default `INFO`). Un 422 es `WARNING`; un fallo de
 carga del artefacto es `CRITICAL` y deja `/ready` en 503.
 
-**Metricas** (`/metrics`): `ml_requests_total`, `ml_request_latency_seconds`,
-`ml_stage_latency_seconds`, `ml_prediction_score`, `ml_predictions_total`,
-`ml_input_invalid_total`, `ml_model_loaded`. Los labels son de baja
-cardinalidad (version, status, stage, label, field): el `request_id` y el
-`features_hash` van al log, nunca a una metrica.
+**Metricas** (`/metrics`, formato Prometheus):
+
+| Metrica | Tipo | Labels | Que mide |
+|---|---|---|---|
+| `ml_requests_total` | Counter | `model_version`, `status` | Cantidad de peticiones (exito / error) |
+| `ml_request_latency_seconds` | Histogram | `model_version` | Latencia de `/predict` (p50/p90/p99) |
+| `ml_stage_latency_seconds` | Histogram | `stage` | Latencia por etapa (`to_frame`, `predict`, `postprocess`) |
+| `ml_prediction_score` | Histogram | `model_version` | Distribucion de probabilidades predichas |
+| `ml_predictions_total` | Counter | `model_version`, `label` | Cantidad de predicciones por clase |
+| `ml_input_invalid_total` | Counter | `field` | Inputs rechazados por campo del contrato (422) |
+| `ml_model_loaded` | Gauge | `model_version` | 1 si el modelo esta cargado, 0 si no |
+
+Los labels son de **baja cardinalidad** (version, status, stage, label, field):
+el `request_id` y el `features_hash` van al log, nunca a una metrica.
 
 **Sin secretos ni PII:** nunca se registran la `API_KEY` futura, cabeceras
 crudas ni el cuerpo crudo de la peticion. El evento `prediction_features`
